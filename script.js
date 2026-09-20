@@ -1,4 +1,13 @@
-const SONGS_INDEX = "http://127.0.0.1:3000/songs/";
+const LOCAL_SONGS_INDEX = "http://127.0.0.1:3000/songs/";
+const GITHUB_SONGS_API = "https://api.github.com/repos/karthikeya9reddy/spootitify/contents/songs";
+const USING_LOCAL_SONG_SERVER =
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1" ||
+    location.hostname === "0.0.0.0";
+const SONGS_INDEX = USING_LOCAL_SONG_SERVER
+    ? LOCAL_SONGS_INDEX
+    : GITHUB_SONGS_API;
+
 const currentSong = new Audio();
 currentSong.preload = "metadata";
 currentSong.crossOrigin = "anonymous";
@@ -308,7 +317,27 @@ function secondsToMinutesSeconds(seconds) {
 
 async function getsongs() {
     const response = await fetch(SONGS_INDEX, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Song server returned ${response.status}`);
+    if (!response.ok) {
+        throw new Error(`${USING_LOCAL_SONG_SERVER ? "Song server" : "GitHub Songs API"} returned ${response.status}`);
+    }
+
+    if (!USING_LOCAL_SONG_SERVER) {
+        const files = await response.json();
+
+        if (!Array.isArray(files)) {
+            throw new Error("GitHub Songs API did not return a file list");
+        }
+
+        return files
+            .filter(file =>
+                file &&
+                file.type === "file" &&
+                typeof file.name === "string" &&
+                file.name.toLowerCase().endsWith(".mp3") &&
+                typeof file.download_url === "string"
+            )
+            .map(file => file.download_url);
+    }
 
     const div = document.createElement("div");
     div.innerHTML = await response.text();
@@ -4250,7 +4279,9 @@ async function main() {
 
         showNoResults(
             "Music library unavailable",
-            "Make sure your local song server is running."
+            USING_LOCAL_SONG_SERVER
+                ? "Make sure your local song server is running."
+                : "Make sure your MP3 files are inside the GitHub songs folder."
         );
 
         if (libraryCount) {
