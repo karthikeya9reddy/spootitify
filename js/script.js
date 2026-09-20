@@ -1,16 +1,28 @@
-const LOCAL_SONGS_INDEX = "http://127.0.0.1:3000/songs/";
-const GITHUB_OWNER = "karthikeya9reddy";
-const GITHUB_REPOSITORY = "spootitify";
-const GITHUB_BRANCH = "main";
-const GITHUB_SONG_FOLDER = "songs";
+const LOCAL_SONG_DB_NAME = "spootitifyLocalMusicV1";
+const LOCAL_SONG_STORE_NAME = "songs";
+const LOCAL_SONG_ACCEPTED_EXTENSIONS = [
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".ogg",
+    ".oga",
+    ".aac",
+    ".flac",
+    ".opus",
+    ".webm"
+];
 
 const currentSong = new Audio();
 currentSong.preload = "metadata";
 currentSong.crossOrigin = "anonymous";
 
 let allSongs = [];
+let localSongs = [];
 let currentIndex = 0;
 let isSeeking = false;
+let localSongDatabasePromise = null;
+const localSongMeta = new Map();
+const localSongById = new Map();
 
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
@@ -311,139 +323,656 @@ function secondsToMinutesSeconds(seconds) {
     return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-async function getLocalSongs() {
-    const response = await fetch(LOCAL_SONGS_INDEX, { cache: "no-store" });
+async function getsongs() {
+    return [];
+}
 
-    if (!response.ok) {
-        throw new Error(`Local song server returned ${response.status}`);
+function openLocalSongDatabase() {
+    if (localSongDatabasePromise) {
+        return localSongDatabasePromise;
     }
 
-    const div = document.createElement("div");
-    div.innerHTML = await response.text();
-
-    return [...div.querySelectorAll("a")]
-        .map(link => link.textContent.trim())
-        .filter(name => name.toLowerCase().endsWith(".mp3"))
-        .map(name => LOCAL_SONGS_INDEX + encodeURIComponent(name));
-}
-
-function getGitHubRepositoryInfo() {
-    const host = location.hostname.toLowerCase();
-    const pathParts = location.pathname.split("/").filter(Boolean);
-
-    if (host.endsWith(".github.io")) {
-        const owner = host.slice(0, -".github.io".length) || GITHUB_OWNER;
-        const repo = pathParts[0] || GITHUB_REPOSITORY;
-        return { owner, repo };
-    }
-
-    return {
-        owner: GITHUB_OWNER,
-        repo: GITHUB_REPOSITORY
-    };
-}
-
-function encodeGitHubPath(path) {
-    return String(path)
-        .split("/")
-        .filter(Boolean)
-        .map(segment => encodeURIComponent(segment))
-        .join("/");
-}
-
-async function getGitHubSongs() {
-    const { owner, repo } = getGitHubRepositoryInfo();
-    const treeURL =
-        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(GITHUB_BRANCH)}?recursive=1`;
-
-    const response = await fetch(treeURL, {
-        cache: "no-store",
-        headers: {
-            Accept: "application/vnd.github+json"
+    localSongDatabasePromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) {
+            reject(new Error("IndexedDB is not available in this browser."));
+            return;
         }
+
+        const request = indexedDB.open(LOCAL_SONG_DB_NAME, 1);
+
+        request.onupgradeneeded = () => {
+            const database = request.result;
+
+            if (!database.objectStoreNames.contains(LOCAL_SONG_STORE_NAME)) {
+                database.createObjectStore(LOCAL_SONG_STORE_NAME, {
+                    keyPath: "id"
+                });
+            }
+        };
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () =>
+            reject(request.error || new Error("Could not open local music storage."));
     });
 
-    if (!response.ok) {
-        let detail = "";
-        try {
-            const data = await response.json();
-            detail = data?.message ? `: ${data.message}` : "";
-        } catch {
-        }
+    return localSongDatabasePromise;
+}
 
-        throw new Error(`GitHub song index returned ${response.status}${detail}`);
-    }
+function getAllLocalSongRecords() {
+    return openLocalSongDatabase().then(
+        database =>
+            new Promise((resolve, reject) => {
+                const transaction = database.transaction(
+                    LOCAL_SONG_STORE_NAME,
+                    "readonly"
+                );
 
-    const data = await response.json();
-    const tree = Array.isArray(data?.tree) ? data.tree : [];
-    const folderPrefix = `${GITHUB_SONG_FOLDER}/`;
-    const folderPrefixLower = folderPrefix.toLowerCase();
+                const request = transaction
+                    .objectStore(LOCAL_SONG_STORE_NAME)
+                    .getAll();
 
-    const songs = tree
-        .filter(entry =>
-            entry?.type === "blob" &&
-            typeof entry.path === "string" &&
-            entry.path.toLowerCase().startsWith(folderPrefixLower) &&
-            entry.path.toLowerCase().endsWith(".mp3")
-        )
-        .map(entry =>
-            `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(GITHUB_BRANCH)}/${encodeGitHubPath(entry.path)}`
-        );
+                request.onsuccess = () =>
+                    resolve(Array.isArray(request.result) ? request.result : []);
 
-    if (songs.length) {
-        return songs;
-    }
-
-    const alternateFolderPrefix = "Songs/";
-    const alternateSongs = tree
-        .filter(entry =>
-            entry?.type === "blob" &&
-            typeof entry.path === "string" &&
-            entry.path.toLowerCase().startsWith(alternateFolderPrefix.toLowerCase()) &&
-            entry.path.toLowerCase().endsWith(".mp3")
-        )
-        .map(entry =>
-            `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(GITHUB_BRANCH)}/${encodeGitHubPath(entry.path)}`
-        );
-
-    if (alternateSongs.length) {
-        return alternateSongs;
-    }
-
-    throw new Error(
-        `No MP3 files were found in ${owner}/${repo}/${GITHUB_SONG_FOLDER}`
+                request.onerror = () =>
+                    reject(
+                        request.error ||
+                            new Error("Could not read your local music library.")
+                    );
+            })
     );
 }
 
-async function getsongs() {
-    const isLocal =
-        location.hostname === "localhost" ||
-        location.hostname === "127.0.0.1" ||
-        location.hostname === "0.0.0.0";
+function putLocalSongRecord(record) {
+    return openLocalSongDatabase().then(
+        database =>
+            new Promise((resolve, reject) => {
+                const transaction = database.transaction(
+                    LOCAL_SONG_STORE_NAME,
+                    "readwrite"
+                );
 
-    if (isLocal) {
-        return getLocalSongs();
+                const request = transaction
+                    .objectStore(LOCAL_SONG_STORE_NAME)
+                    .put(record);
+
+                request.onsuccess = () => resolve();
+                request.onerror = () =>
+                    reject(
+                        request.error ||
+                            new Error("Could not save this song.")
+                    );
+            })
+    );
+}
+
+function deleteLocalSongRecord(id) {
+    return openLocalSongDatabase().then(
+        database =>
+            new Promise((resolve, reject) => {
+                const transaction = database.transaction(
+                    LOCAL_SONG_STORE_NAME,
+                    "readwrite"
+                );
+
+                const request = transaction
+                    .objectStore(LOCAL_SONG_STORE_NAME)
+                    .delete(id);
+
+                request.onsuccess = () => resolve();
+                request.onerror = () =>
+                    reject(
+                        request.error ||
+                            new Error("Could not remove this song.")
+                    );
+            })
+    );
+}
+
+function makeLocalSongId() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
     }
 
-    return getGitHubSongs();
+    return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getLocalSongSignature(file) {
+    return [
+        file.name,
+        file.size,
+        file.lastModified,
+        file.type || ""
+    ].join("::");
+}
+
+function getLocalSongExtension(name) {
+    const lower = String(name || "").toLowerCase();
+    const match = lower.match(/\.[a-z0-9]+$/);
+    return match ? match[0] : "";
+}
+
+function isSupportedLocalSong(file) {
+    if (!file || !file.name) {
+        return false;
+    }
+
+    const extension = getLocalSongExtension(file.name);
+
+    return (
+        String(file.type || "")
+            .toLowerCase()
+            .startsWith("audio/") ||
+        LOCAL_SONG_ACCEPTED_EXTENSIONS.includes(extension)
+    );
+}
+
+function createLocalSongURL(record) {
+    const url = URL.createObjectURL(record.blob);
+    const meta = {
+        id: String(record.id),
+        name: String(record.name || "Untitled song"),
+        artist: "Local file",
+        signature: record.signature || ""
+    };
+
+    localSongMeta.set(url, meta);
+    localSongById.set(meta.id, url);
+
+    return url;
+}
+
+async function loadLocalSongsFromStorage() {
+    for (const song of localSongs) {
+        try {
+            URL.revokeObjectURL(song);
+        } catch {
+        }
+    }
+
+    localSongMeta.clear();
+    localSongById.clear();
+
+    const records = await getAllLocalSongRecords();
+
+    records.sort(
+        (a, b) => Number(a.addedAt || 0) - Number(b.addedAt || 0)
+    );
+
+    localSongs = records
+        .filter(record => record && record.blob)
+        .map(record => createLocalSongURL(record));
+
+    allSongs = [...localSongs];
+}
+
+function getLocalSongMeta(songURL) {
+    return localSongMeta.get(songURL) || null;
+}
+
+function getStableSongReference(songURL) {
+    const meta = getLocalSongMeta(songURL);
+
+    return meta
+        ? `local:${meta.id}`
+        : String(songURL || "");
+}
+
+function resolveStoredSongReference(reference) {
+    const value = String(reference || "");
+
+    if (value.startsWith("local:")) {
+        return localSongById.get(value.slice(6)) || null;
+    }
+
+    return allSongs.includes(value) ? value : null;
+}
+
+function getSongArtist(songURL) {
+    return getLocalSongMeta(songURL)?.artist || "Local file";
+}
+
+function renderLocalLibraryMessage() {
+    songList.innerHTML = "";
+
+    const item = document.createElement("li");
+    item.className = "no-results local-library-empty";
+
+    item.innerHTML = `
+        <div class="info">
+            <div>Your library is empty</div>
+            <div>Add songs from your device to start listening.</div>
+            <button type="button" class="local-empty-add">＋ Add songs</button>
+        </div>
+    `;
+
+    songList.appendChild(item);
+}
+
+function showLocalMusicToast(message) {
+    let toast = document.querySelector(".local-music-toast");
+
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.className = "local-music-toast";
+        toast.setAttribute("aria-live", "polite");
+        document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.classList.remove("show");
+    void toast.offsetWidth;
+    toast.classList.add("show");
+
+    clearTimeout(showLocalMusicToast.timer);
+    showLocalMusicToast.timer = setTimeout(() => {
+        toast.classList.remove("show");
+    }, 2600);
+}
+
+function openLocalSongPicker() {
+    const input = document.querySelector("#localSongInput");
+
+    if (input) {
+        input.value = "";
+        input.click();
+    }
+}
+
+async function addLocalSongFiles(fileList) {
+    const files = [...(fileList || [])].filter(isSupportedLocalSong);
+
+    if (!files.length) {
+        showLocalMusicToast("Choose supported audio files such as MP3, WAV, M4A, OGG or FLAC.");
+        return;
+    }
+
+    try {
+        const existingRecords = await getAllLocalSongRecords();
+        const signatures = new Set(
+            existingRecords.map(record => record.signature).filter(Boolean)
+        );
+
+        let added = 0;
+        let skipped = 0;
+
+        for (const file of files) {
+            const signature = getLocalSongSignature(file);
+
+            if (signatures.has(signature)) {
+                skipped++;
+                continue;
+            }
+
+            const record = {
+                id: makeLocalSongId(),
+                name: file.name,
+                type: file.type || "audio/mpeg",
+                size: file.size,
+                lastModified: Number(file.lastModified || 0),
+                addedAt: Date.now() + added,
+                signature,
+                blob: file
+            };
+
+            await putLocalSongRecord(record);
+
+            const url = createLocalSongURL(record);
+            localSongs.push(url);
+            signatures.add(signature);
+            added++;
+        }
+
+        allSongs = [...localSongs];
+        renderSongs(allSongs);
+        updateFolderCardCounts();
+
+        if (added && skipped) {
+            showLocalMusicToast(`${added} song${added === 1 ? "" : "s"} added • ${skipped} duplicate${skipped === 1 ? "" : "s"} skipped`);
+        } else if (added) {
+            showLocalMusicToast(`${added} song${added === 1 ? "" : "s"} added to your library`);
+        } else {
+            showLocalMusicToast("Those songs are already in your library");
+        }
+    } catch (error) {
+        console.error(error);
+        showLocalMusicToast("Your browser could not save these songs locally");
+    }
+}
+
+async function removeLocalSong(songURL) {
+    const meta = getLocalSongMeta(songURL);
+
+    if (!meta) {
+        return;
+    }
+
+    const name = meta.name;
+
+    try {
+        await deleteLocalSongRecord(meta.id);
+
+        Object.entries(folders).forEach(([folderId, folder]) => {
+            if (!folder || !Array.isArray(folder.songs)) {
+                return;
+            }
+
+            const nextSongs = folder.songs.filter(
+                savedSong =>
+                    getFolderSongIdentity(savedSong) !== `local:${meta.id}`
+            );
+
+            if (nextSongs.length !== folder.songs.length) {
+                folders[folderId].songs = nextSongs;
+            }
+        });
+
+        saveFolders();
+
+        if (currentSong.src === songURL) {
+            currentSong.pause();
+            currentSong.removeAttribute("src");
+            currentSong.load();
+            animateSongTitle("No song selected");
+            updateProgress(0);
+            updateSongTime();
+            updatePlayerVisuals();
+        }
+
+        try {
+            URL.revokeObjectURL(songURL);
+        } catch {
+        }
+
+        const index = localSongs.indexOf(songURL);
+
+        if (index !== -1) {
+            localSongs.splice(index, 1);
+        }
+
+        localSongMeta.delete(songURL);
+        localSongById.delete(meta.id);
+        allSongs = [...localSongs];
+
+        if (currentIndex >= allSongs.length) {
+            currentIndex = Math.max(0, allSongs.length - 1);
+        }
+
+        renderSongs(allSongs);
+        updateFolderCardCounts();
+        showLocalMusicToast(`Removed “${name}” from your library`);
+    } catch (error) {
+        console.error(error);
+        showLocalMusicToast("Could not remove that song");
+    }
+}
+
+function installLocalMusicStyles() {
+    if (document.getElementById("local-music-styles")) {
+        return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "local-music-styles";
+    style.textContent = `
+        .library .heading {
+            position: relative;
+        }
+        .local-library-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .local-add-songs-button {
+            appearance: none;
+            border: 1px solid rgba(255,255,255,.13);
+            border-radius: 999px;
+            background: rgba(255,255,255,.045);
+            color: rgba(255,255,255,.82);
+            padding: 7px 11px;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .02em;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: transform .25s ease, background .25s ease, border-color .25s ease, color .25s ease;
+        }
+        .local-add-songs-button:hover {
+            transform: translateY(-1px);
+            background: rgba(255,255,255,.09);
+            border-color: rgba(75,218,109,.42);
+            color: #fff;
+        }
+        .local-add-songs-button:active {
+            transform: translateY(0) scale(.97);
+        }
+        .local-song-remove {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%) scale(.92);
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(255,255,255,.10);
+            border-radius: 50%;
+            background: rgba(0,0,0,.35);
+            color: rgba(255,255,255,.62);
+            cursor: pointer;
+            opacity: 0;
+            z-index: 5;
+            transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
+        }
+        .local-song-remove::before,
+        .local-song-remove::after {
+            content: "";
+            position: absolute;
+            width: 11px;
+            height: 1.5px;
+            background: currentColor;
+            border-radius: 999px;
+        }
+        .local-song-remove::before {
+            transform: rotate(45deg);
+        }
+        .local-song-remove::after {
+            transform: rotate(-45deg);
+        }
+        .songlist ul li:hover .local-song-remove,
+        .songlist ul li:focus-within .local-song-remove {
+            opacity: 1;
+            transform: translateY(-50%) scale(1);
+        }
+        .local-song-remove:hover {
+            background: rgba(255,255,255,.10);
+            color: #fff;
+            transform: translateY(-50%) scale(1.06) !important;
+        }
+        .local-library-empty {
+            list-style: none !important;
+            padding: 20px 14px !important;
+            min-height: 0 !important;
+            cursor: default !important;
+            display: block !important;
+            text-align: center;
+        }
+        .local-library-empty:hover {
+            transform: none !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,.2) !important;
+            border-color: rgba(255,255,255,.10) !important;
+        }
+        .local-library-empty .info {
+            display: grid;
+            justify-items: center;
+            gap: 6px;
+        }
+        .local-library-empty .info > div:first-child {
+            color: #fff;
+            font-weight: 800;
+        }
+        .local-library-empty .info > div:nth-child(2) {
+            color: rgba(255,255,255,.46);
+            font-size: 11px;
+        }
+        .local-empty-add {
+            margin-top: 7px;
+            border: 1px solid rgba(75,218,109,.38);
+            border-radius: 999px;
+            background: rgba(75,218,109,.08);
+            color: rgba(255,255,255,.88);
+            padding: 7px 12px;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .local-empty-add:hover {
+            background: rgba(75,218,109,.14);
+        }
+        .local-music-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 105px;
+            transform: translate(-50%, 12px);
+            z-index: 99999;
+            max-width: min(90vw, 430px);
+            padding: 10px 15px;
+            border: 1px solid rgba(255,255,255,.10);
+            border-radius: 999px;
+            background: rgba(18,18,18,.94);
+            color: rgba(255,255,255,.88);
+            box-shadow: 0 12px 30px rgba(0,0,0,.35);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .25s ease, transform .25s ease;
+        }
+        .local-music-toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+        .library.local-drop-active {
+            outline: 1px solid rgba(75,218,109,.45);
+            outline-offset: -3px;
+        }
+        @media (max-width: 700px) {
+            .local-add-songs-button {
+                padding: 6px 9px;
+                font-size: 10px;
+            }
+            .local-music-toast {
+                bottom: 92px;
+            }
+        }
+    `;
+
+    document.head.appendChild(style);
+}
+
+function setupLocalMusicFeature() {
+    installLocalMusicStyles();
+
+    const library = $(".library");
+    const heading = $(".library .heading");
+
+    if (!library || !heading) {
+        return;
+    }
+
+    let actions = $(".local-library-actions", heading);
+
+    if (!actions) {
+        actions = document.createElement("div");
+        actions.className = "local-library-actions";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "local-add-songs-button";
+        button.textContent = "＋ Add songs";
+        button.addEventListener("click", openLocalSongPicker);
+
+        actions.appendChild(button);
+        heading.appendChild(actions);
+    }
+
+    if (!document.querySelector("#localSongInput")) {
+        const input = document.createElement("input");
+        input.id = "localSongInput";
+        input.type = "file";
+        input.multiple = true;
+        input.accept = "audio/*,.mp3,.wav,.m4a,.ogg,.oga,.aac,.flac,.opus,.webm";
+        input.hidden = true;
+
+        input.addEventListener("change", event => {
+            addLocalSongFiles(event.target.files);
+        });
+
+        document.body.appendChild(input);
+    }
+
+    document.addEventListener("click", event => {
+        if (event.target.closest(".local-empty-add")) {
+            openLocalSongPicker();
+        }
+    });
+
+    ["dragenter", "dragover"].forEach(type =>
+        library.addEventListener(type, event => {
+            if (!event.dataTransfer?.types?.includes("Files")) {
+                return;
+            }
+
+            event.preventDefault();
+            library.classList.add("local-drop-active");
+        })
+    );
+
+    ["dragleave", "drop"].forEach(type =>
+        library.addEventListener(type, event => {
+            event.preventDefault();
+            if (type === "drop") {
+                addLocalSongFiles(event.dataTransfer?.files);
+            }
+            library.classList.remove("local-drop-active");
+        })
+    );
 }
 
 function getSongName(songURL) {
+    const localMeta = getLocalSongMeta(songURL);
+
+    if (localMeta) {
+        return localMeta.name
+            .replace(/\.(mp3|wav|m4a|ogg|oga|aac|flac|opus|webm)$/i, "")
+            .replace(/_+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
     let filename = "";
 
     try {
-        filename = decodeURIComponent(songURL.split("/songs/")[1] || "");
+        const parsed = new URL(songURL, window.location.href);
+        filename = decodeURIComponent(
+            parsed.pathname.split("/").pop() || ""
+        );
     } catch {
-        filename = songURL.split("/songs/")[1] || "";
+        filename = String(songURL || "").split("/").pop() || "";
     }
 
     return filename
-        .replace(/\.mp3$/i, "")
+        .replace(/\.(mp3|wav|m4a|ogg|oga|aac|flac|opus|webm)$/i, "")
         .replace(/\(.*?\.mp3\)/gi, "")
         .replace(/senSongsmp3\.co/gi, "")
         .replace(/_+/g, " ")
         .replace(/\s+/g, " ")
-        .trim();
+        .trim() || "Untitled song";
 }
 
 function normalizeText(text) {
@@ -633,7 +1162,7 @@ function playMusic(
 
     localStorage.setItem(
         "lastPlayedSong",
-        songURL
+        getStableSongReference(songURL)
     );
 
     currentIndex =
@@ -728,7 +1257,7 @@ function createSongItem(song, index) {
     icon.draggable = false;
 
     title.textContent = name;
-    artist.textContent = "karthikeya";
+    artist.textContent = getSongArtist(song);
 
     info.className = "info";
     info.append(
@@ -752,10 +1281,23 @@ function createSongItem(song, index) {
         playIcon
     );
 
+    const removeButton = document.createElement("button");
+
+    removeButton.type = "button";
+    removeButton.className = "local-song-remove";
+    removeButton.setAttribute("aria-label", `Remove ${name} from your library`);
+
+    removeButton.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeLocalSong(song);
+    });
+
     li.append(
         icon,
         info,
-        playNow
+        playNow,
+        removeButton
     );
 
     return li;
@@ -763,6 +1305,16 @@ function createSongItem(song, index) {
 
 function renderSongs(songs) {
     songList.innerHTML = "";
+
+    if (!songs.length) {
+        renderLocalLibraryMessage();
+
+        if (libraryCount) {
+            libraryCount.textContent = "0 tracks";
+        }
+
+        return;
+    }
 
     const fragment =
         document.createDocumentFragment();
@@ -912,6 +1464,8 @@ function togglePlay() {
                 allSongs[0],
                 getSongName(allSongs[0])
             );
+        } else {
+            openLocalSongPicker();
         }
 
         return;
@@ -1022,6 +1576,10 @@ function setupSongControls() {
     songList.addEventListener(
         "click",
         event => {
+            if (event.target.closest(".local-song-remove")) {
+                return;
+            }
+
             const item =
                 event.target.closest(
                     "li[data-song]"
@@ -1055,6 +1613,7 @@ function setupSongControls() {
 
             if (
                 !item ||
+                event.target.closest(".local-song-remove") ||
                 !["Enter", " "]
                     .includes(event.key)
             ) {
@@ -1653,7 +2212,19 @@ function getFolderSongIdentity(value) {
         return "";
     }
 
-    let text = String(value);
+    const textValue = String(value);
+
+    if (textValue.startsWith("local:")) {
+        return textValue;
+    }
+
+    const localMeta = getLocalSongMeta(textValue);
+
+    if (localMeta) {
+        return `local:${localMeta.id}`;
+    }
+
+    let text = textValue;
 
     try {
         text = decodeURIComponent(text);
@@ -1671,11 +2242,17 @@ function getFolderSongIdentity(value) {
 
     return normalizeText(
         text
-            .replace(/\.mp3$/i, "")
+            .replace(/\.(mp3|wav|m4a|ogg|oga|aac|flac|opus|webm)$/i, "")
     );
 }
 
 function resolveFolderSong(savedSong) {
+    const savedValue = String(savedSong || "");
+
+    if (savedValue.startsWith("local:")) {
+        return localSongById.get(savedValue.slice(6)) || null;
+    }
+
     const savedIdentity =
         getFolderSongIdentity(savedSong);
 
@@ -2197,7 +2774,7 @@ function renderFolderPickerView(folder) {
                     document.createElement("small");
 
                 artist.textContent =
-                    "karthikeya";
+                    getSongArtist(song);
 
                 text.append(
                     title,
@@ -2408,7 +2985,7 @@ function renderFolderSavedView(folder) {
                     document.createElement("small");
 
                 artist.textContent =
-                    "karthikeya";
+                    getSongArtist(song);
 
                 text.append(
                     title,
@@ -2577,15 +3154,18 @@ function saveFolderAdditions(folder) {
             const resolved =
                 resolveFolderSong(song) || song;
 
+            const stableReference =
+                getStableSongReference(resolved);
+
             const identity =
-                getFolderSongIdentity(resolved);
+                getFolderSongIdentity(stableReference);
 
             if (
                 identity &&
                 !seen.has(identity)
             ) {
                 seen.add(identity);
-                combined.push(resolved);
+                combined.push(stableReference);
             }
         });
 
@@ -4309,14 +4889,15 @@ async function main() {
     setupVolumeControl();
     setupCreateFolderFeature();
     setupFolderFeature();
+    setupLocalMusicFeature();
 
     updateProgress(0);
     updateSongTime();
     updatePlayerVisuals();
 
     try {
-        allSongs =
-            await getsongs();
+        await getsongs();
+        await loadLocalSongsFromStorage();
 
         renderSongs(
             allSongs
@@ -4329,21 +4910,21 @@ async function main() {
                 "lastPlayedSong"
             );
 
-        if (
-            lastPlayedSong &&
-            allSongs.includes(
+        const restoredSong =
+            resolveStoredSongReference(
                 lastPlayedSong
-            )
-        ) {
+            );
+
+        if (restoredSong) {
             currentIndex =
                 allSongs.indexOf(
-                    lastPlayedSong
+                    restoredSong
                 );
 
             playMusic(
-                lastPlayedSong,
+                restoredSong,
                 getSongName(
-                    lastPlayedSong
+                    restoredSong
                 ),
                 false,
                 "library"
@@ -4354,21 +4935,15 @@ async function main() {
             error
         );
 
-        songList.innerHTML =
-            "";
-
-        showNoResults(
-            "Music library unavailable",
-            "GitHub could not load your songs. Check the browser console for details."
-        );
+        renderLocalLibraryMessage();
 
         if (libraryCount) {
             libraryCount.textContent =
-                "Offline";
+                "0 tracks";
         }
 
         setPlayerStatus(
-            "Library unavailable"
+            "Ready to add music"
         );
     }
 }
@@ -4470,22 +5045,22 @@ main().catch(
     const LAYER_SPEC = [
         {
             share: 0.56, softness: 2, cell: 94,
-            sizeMin: 0.28, sizeMax: 0.52,
-            alphaMin: 0.16, alphaMax: 0.30,
+            sizeMin: 0.12, sizeMax: 0.30,
+            alphaMin: 0.13, alphaMax: 0.25,
             flowScale: 0.0016, flowSpeed: 0.55, flowAmp: 10,
             relax: 0.075, agility: 0.34, maxSpeed: 70
         },
         {
             share: 0.32, softness: 1, cell: 72,
-            sizeMin: 0.34, sizeMax: 0.66,
-            alphaMin: 0.18, alphaMax: 0.34,
+            sizeMin: 0.22, sizeMax: 0.44,
+            alphaMin: 0.14, alphaMax: 0.29,
             flowScale: 0.0026, flowSpeed: 0.85, flowAmp: 18,
             relax: 0.035, agility: 0.78, maxSpeed: 220
         },
         {
             share: 0.12, softness: 0, cell: 58,
-            sizeMin: 0.42, sizeMax: 0.82,
-            alphaMin: 0.20, alphaMax: 0.38,
+            sizeMin: 0.32, sizeMax: 0.62,
+            alphaMin: 0.16, alphaMax: 0.34,
             flowScale: 0.0038, flowSpeed: 1.15, flowAmp: 30,
             relax: 0.020, agility: 1.30, maxSpeed: 280
         }
@@ -4500,18 +5075,16 @@ main().catch(
         ".nebula-layer {",
         "    position: absolute;",
         "    inset: 0;",
-        "    z-index: 5;",
+        "    z-index: 0;",
         "    overflow: hidden;",
         "    pointer-events: none;",
         "    border-radius: inherit;",
         "    background: transparent;",
-        "    opacity: 1;",
-        "    mix-blend-mode: screen;",
         "}",
         "",
         "." + HOST_CLASS + " > :not(.nebula-layer) {",
         "    position: relative;",
-        "    z-index: 6;",
+        "    z-index: 1;",
         "}",
         "",
         ".nebula-layer canvas {",
@@ -5208,16 +5781,16 @@ main().catch(
 
     function buildClouds() {
         const tints = [
-            ["rgba(28,150,88,0.25)", "rgba(24,120,74,0.12)"],
-            ["rgba(34,196,132,0.22)", "rgba(26,140,96,0.11)"],
-            ["rgba(28,180,168,0.20)", "rgba(20,120,120,0.09)"],
-            ["rgba(40,160,210,0.16)", "rgba(28,104,150,0.075)"],
-            ["rgba(96,126,220,0.11)", "rgba(58,74,150,0.055)"],
-            ["rgba(140,110,220,0.08)", "rgba(88,70,150,0.045)"],
-            ["rgba(180,255,214,0.08)", "rgba(120,200,164,0.04)"]
+            ["rgba(28,150,88,0.16)", "rgba(24,120,74,0.07)"],
+            ["rgba(34,196,132,0.13)", "rgba(26,140,96,0.06)"],
+            ["rgba(28,180,168,0.12)", "rgba(20,120,120,0.05)"],
+            ["rgba(40,160,210,0.10)", "rgba(28,104,150,0.045)"],
+            ["rgba(96,126,220,0.07)", "rgba(58,74,150,0.03)"],
+            ["rgba(140,110,220,0.055)", "rgba(88,70,150,0.025)"],
+            ["rgba(180,255,214,0.05)", "rgba(120,200,164,0.022)"]
         ];
 
-        const count = state.coarse ? 9 : 15;
+        const count = state.coarse ? 7 : 11;
         const clouds = [];
 
         for (let i = 0; i < count; i++) {
@@ -5305,9 +5878,9 @@ main().catch(
         const coreRadius = reference * 0.16;
         const coreGradient = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, coreRadius);
 
-        coreGradient.addColorStop(0, "rgba(84,255,178,0.08)");
-        coreGradient.addColorStop(0.36, "rgba(40,180,210,0.045)");
-        coreGradient.addColorStop(0.72, "rgba(96,100,220,0.025)");
+        coreGradient.addColorStop(0, "rgba(84,255,178,0.045)");
+        coreGradient.addColorStop(0.36, "rgba(40,180,210,0.025)");
+        coreGradient.addColorStop(0.72, "rgba(96,100,220,0.012)");
         coreGradient.addColorStop(1, "rgba(0,0,0,0)");
 
         ctx.globalAlpha = 1;
@@ -5329,8 +5902,8 @@ main().catch(
             const ey = sy + Math.sin(angle + 2.45) * sweep * 0.48;
             const grad = ctx.createLinearGradient(sx, sy, ex, ey);
 
-            grad.addColorStop(0, "rgba(64,230,175,0.042)");
-            grad.addColorStop(0.5, "rgba(55,195,225,0.028)");
+            grad.addColorStop(0, "rgba(64,230,175,0.022)");
+            grad.addColorStop(0.5, "rgba(55,195,225,0.014)");
             grad.addColorStop(1, "rgba(0,0,0,0)");
 
             ctx.strokeStyle = grad;
