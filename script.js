@@ -23,6 +23,16 @@ let isSeeking = false;
 let localSongDatabasePromise = null;
 const localSongMeta = new Map();
 const localSongById = new Map();
+const selectedLocalSongIds = new Set();
+let localSongSelectionMode = false;
+const songNameCache = new Map();
+const normalizedSongNameCache = new Map();
+const songItemCache = new Map();
+let activeSongItem = null;
+let lastSongTimeText = "";
+let progressFrame = 0;
+let pendingProgressPercent = null;
+let seekbarRect = null;
 
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
@@ -579,6 +589,143 @@ function openLocalSongPicker() {
     }
 }
 
+function isLocalSongSelected(songURL) {
+    const meta = getLocalSongMeta(songURL);
+    return Boolean(meta && selectedLocalSongIds.has(meta.id));
+}
+
+function getSelectedLocalSongURLs() {
+    return [...selectedLocalSongIds]
+        .map(id => localSongById.get(id))
+        .filter(Boolean);
+}
+
+function updateLocalSongSelectionUI() {
+    const actions = document.querySelector(".local-library-actions");
+    const moreButton = document.querySelector(".local-library-more-button");
+    const selectionBar = document.querySelector(".local-library-selection-bar");
+    const countElement = document.querySelector(".local-library-selection-count");
+    const deleteButton = document.querySelector(".local-library-delete-action");
+    const cancelButton = document.querySelector(".local-library-cancel-action");
+    const count = selectedLocalSongIds.size;
+
+    if (actions) {
+        actions.classList.toggle(
+            "is-selecting",
+            localSongSelectionMode
+        );
+    }
+
+    if (selectionBar) {
+        selectionBar.setAttribute(
+            "aria-hidden",
+            localSongSelectionMode ? "false" : "true"
+        );
+    }
+
+    $$(".local-song-select").forEach(input => {
+        input.checked = selectedLocalSongIds.has(input.dataset.songId);
+    });
+
+    $$(".songlist li[data-song]").forEach(item => {
+        const selected = isLocalSongSelected(item.dataset.song);
+
+        item.classList.toggle(
+            "local-song-selected",
+            selected
+        );
+
+        item.setAttribute(
+            "aria-selected",
+            selected ? "true" : "false"
+        );
+    });
+
+    if (moreButton) {
+        moreButton.setAttribute(
+            "aria-label",
+            localSongSelectionMode
+                ? "Song selection active"
+                : "Select songs to delete"
+        );
+    }
+
+    if (countElement) {
+        countElement.textContent = `${count} selected`;
+    }
+
+    if (deleteButton) {
+        deleteButton.disabled = count === 0;
+        deleteButton.textContent = count
+            ? `Delete selected (${count})`
+            : "Delete selected";
+    }
+
+    if (cancelButton) {
+        cancelButton.hidden = !localSongSelectionMode;
+    }
+}
+
+function setLocalSongSelectionMode(enabled) {
+    localSongSelectionMode = Boolean(enabled);
+
+    if (!localSongSelectionMode) {
+        selectedLocalSongIds.clear();
+    }
+
+    renderSongs(allSongs);
+    updateLocalSongSelectionUI();
+}
+
+function toggleLocalSongSelection(songURL) {
+    const meta = getLocalSongMeta(songURL);
+
+    if (!meta) {
+        return;
+    }
+
+    if (selectedLocalSongIds.has(meta.id)) {
+        selectedLocalSongIds.delete(meta.id);
+    } else {
+        selectedLocalSongIds.add(meta.id);
+    }
+
+    updateLocalSongSelectionUI();
+}
+
+async function deleteSelectedLocalSongs() {
+    const selectedSongs = getSelectedLocalSongURLs();
+
+    if (!selectedSongs.length) {
+        showLocalMusicToast("Select at least one song to delete");
+        return;
+    }
+
+    const count = selectedSongs.length;
+
+    try {
+        for (const songURL of selectedSongs) {
+            await removeLocalSong(songURL, {
+                silent: true,
+                skipRender: true
+            });
+        }
+
+        selectedLocalSongIds.clear();
+        localSongSelectionMode = false;
+        allSongs = [...localSongs];
+        renderSongs(allSongs);
+        updateFolderCardCounts();
+        updateLocalSongSelectionUI();
+        showLocalMusicToast(
+            `${count} selected song${count === 1 ? "" : "s"} deleted from your library`
+        );
+    } catch (error) {
+        console.error(error);
+        showLocalMusicToast("Could not delete the selected songs");
+    }
+}
+
 async function addLocalSongFiles(fileList) {
     const files = [...(fileList || [])].filter(isSupportedLocalSong);
 
@@ -640,7 +787,11 @@ async function addLocalSongFiles(fileList) {
     }
 }
 
-async function removeLocalSong(songURL) {
+async function removeLocalSong(songURL, options = {}) {
+    const {
+        silent = false,
+        skipRender = false
+    } = options;
     const meta = getLocalSongMeta(songURL);
 
     if (!meta) {
@@ -651,6 +802,7 @@ async function removeLocalSong(songURL) {
 
     try {
         await deleteLocalSongRecord(meta.id);
+        selectedLocalSongIds.delete(meta.id);
 
         Object.entries(folders).forEach(([folderId, folder]) => {
             if (!folder || !Array.isArray(folder.songs)) {
@@ -692,15 +844,26 @@ async function removeLocalSong(songURL) {
 
         localSongMeta.delete(songURL);
         localSongById.delete(meta.id);
+        songNameCache.delete(songURL);
+        normalizedSongNameCache.delete(songURL);
+        songItemCache.delete(songURL);
+        if (activeSongItem?.dataset.song === songURL) {
+            activeSongItem = null;
+        }
         allSongs = [...localSongs];
 
         if (currentIndex >= allSongs.length) {
             currentIndex = Math.max(0, allSongs.length - 1);
         }
 
-        renderSongs(allSongs);
-        updateFolderCardCounts();
-        showLocalMusicToast(`Removed “${name}” from your library`);
+        if (!skipRender) {
+            renderSongs(allSongs);
+            updateFolderCardCounts();
+        }
+
+        if (!silent) {
+            showLocalMusicToast(`Removed “${name}” from your library`);
+        }
     } catch (error) {
         console.error(error);
         showLocalMusicToast("Could not remove that song");
@@ -749,6 +912,10 @@ function installLocalMusicStyles() {
         .local-add-songs-button:active {
             transform: translateY(0) scale(.97);
         }
+        .local-library-actions {
+            position: relative;
+            min-width: 0;
+        }
         .local-song-remove {
             position: absolute;
             right: 8px;
@@ -791,6 +958,17 @@ function installLocalMusicStyles() {
             background: rgba(255,255,255,.10);
             color: #fff;
             transform: translateY(-50%) scale(1.06) !important;
+        }
+        @media (pointer: coarse) {
+            .songlist ul li .local-song-remove {
+                opacity: .76;
+                transform: translateY(-50%) scale(1);
+            }
+            .songlist ul li .local-song-remove:active {
+                transform: translateY(-50%) scale(.92) !important;
+                background: rgba(255,255,255,.10);
+                color: #fff;
+            }
         }
         .local-library-empty {
             list-style: none !important;
@@ -862,9 +1040,21 @@ function installLocalMusicStyles() {
             outline-offset: -3px;
         }
         @media (max-width: 700px) {
+            .library .heading {
+                flex-wrap: wrap;
+                row-gap: 8px;
+            }
+            .local-library-actions {
+                width: 100%;
+                margin-left: 0;
+                justify-content: flex-end;
+            }
             .local-add-songs-button {
                 padding: 6px 9px;
                 font-size: 10px;
+            }
+            .songlist ul li {
+                touch-action: manipulation;
             }
             .local-music-toast {
                 bottom: 92px;
@@ -900,6 +1090,11 @@ function setupLocalMusicFeature() {
         actions.appendChild(button);
         heading.appendChild(actions);
     }
+
+
+    localSongSelectionMode = false;
+    selectedLocalSongIds.clear();
+    updateLocalSongSelectionUI();
 
     if (!document.querySelector("#localSongInput")) {
         const input = document.createElement("input");
@@ -945,34 +1140,42 @@ function setupLocalMusicFeature() {
 }
 
 function getSongName(songURL) {
+    if (songNameCache.has(songURL)) {
+        return songNameCache.get(songURL);
+    }
+
     const localMeta = getLocalSongMeta(songURL);
+    let name;
 
     if (localMeta) {
-        return localMeta.name
+        name = localMeta.name
             .replace(/\.(mp3|wav|m4a|ogg|oga|aac|flac|opus|webm)$/i, "")
             .replace(/_+/g, " ")
             .replace(/\s+/g, " ")
             .trim();
+    } else {
+        let filename = "";
+
+        try {
+            const parsed = new URL(songURL, window.location.href);
+            filename = decodeURIComponent(
+                parsed.pathname.split("/").pop() || ""
+            );
+        } catch {
+            filename = String(songURL || "").split("/").pop() || "";
+        }
+
+        name = filename
+            .replace(/\.(mp3|wav|m4a|ogg|oga|aac|flac|opus|webm)$/i, "")
+            .replace(/\(.*?\.mp3\)/gi, "")
+            .replace(/senSongsmp3\.co/gi, "")
+            .replace(/_+/g, " ")
+            .replace(/\s+/g, " ")
+            .trim() || "Untitled song";
     }
 
-    let filename = "";
-
-    try {
-        const parsed = new URL(songURL, window.location.href);
-        filename = decodeURIComponent(
-            parsed.pathname.split("/").pop() || ""
-        );
-    } catch {
-        filename = String(songURL || "").split("/").pop() || "";
-    }
-
-    return filename
-        .replace(/\.(mp3|wav|m4a|ogg|oga|aac|flac|opus|webm)$/i, "")
-        .replace(/\(.*?\.mp3\)/gi, "")
-        .replace(/senSongsmp3\.co/gi, "")
-        .replace(/_+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim() || "Untitled song";
+    songNameCache.set(songURL, name);
+    return name;
 }
 
 function normalizeText(text) {
@@ -985,10 +1188,7 @@ function normalizeText(text) {
         .trim();
 }
 
-function fuzzyScore(songName, searchText) {
-    const name = normalizeText(songName);
-    const query = normalizeText(searchText);
-
+function fuzzyScoreNormalized(name, query) {
     if (!query || !name) return query ? 0 : 1;
     if (name === query) return 10000;
     if (name.startsWith(query)) return 9000 - name.length;
@@ -1025,6 +1225,23 @@ function fuzzyScore(songName, searchText) {
         : 0;
 }
 
+function getNormalizedSongName(songURL, rawName) {
+    if (normalizedSongNameCache.has(songURL)) {
+        return normalizedSongNameCache.get(songURL);
+    }
+
+    const normalized = normalizeText(rawName ?? getSongName(songURL));
+    normalizedSongNameCache.set(songURL, normalized);
+    return normalized;
+}
+
+function fuzzyScore(songName, searchText) {
+    return fuzzyScoreNormalized(
+        normalizeText(songName),
+        normalizeText(searchText)
+    );
+}
+
 function updateProgress(percent) {
     const safePercent = Math.max(0, Math.min(100, percent));
 
@@ -1036,9 +1253,34 @@ function updateProgress(percent) {
     );
 }
 
+function scheduleProgress(percent) {
+    pendingProgressPercent = Math.max(0, Math.min(100, percent));
+
+    if (progressFrame) {
+        return;
+    }
+
+    progressFrame = requestAnimationFrame(() => {
+        progressFrame = 0;
+
+        if (pendingProgressPercent !== null) {
+            const next = pendingProgressPercent;
+            pendingProgressPercent = null;
+            updateProgress(next);
+        }
+    });
+}
+
 function updateSongTime() {
-    songTime.textContent =
+    const text =
         `${secondsToMinutesSeconds(currentSong.currentTime)} / ${secondsToMinutesSeconds(currentSong.duration)}`;
+
+    if (text === lastSongTimeText) {
+        return;
+    }
+
+    lastSongTimeText = text;
+    songTime.textContent = text;
 }
 
 function setPlayerStatus(text) {
@@ -1056,7 +1298,7 @@ function animateSongTitle(name) {
 }
 
 function updateEqualizer() {
-    const equalizer = $(".active-song .song-equalizer");
+    const equalizer = activeSongItem?.querySelector(".song-equalizer");
 
     if (equalizer) {
         equalizer.classList.toggle(
@@ -1094,23 +1336,15 @@ function updatePlayerVisuals() {
 }
 
 function highlightSong(songURL) {
-    const items = $$(
-        ".songlist li[data-song]"
-    );
-
-    let activeItem = null;
-
-    items.forEach(item => {
-        item.classList.remove("active-song");
-
-        item
+    if (activeSongItem) {
+        activeSongItem.classList.remove("active-song");
+        activeSongItem
             .querySelector(".song-equalizer")
             ?.remove();
+    }
 
-        if (item.dataset.song === songURL) {
-            activeItem = item;
-        }
-    });
+    const activeItem = songItemCache.get(songURL);
+    activeSongItem = activeItem || null;
 
     if (!activeItem) return;
 
@@ -1153,6 +1387,13 @@ function playMusic(
     currentSong.src = songURL;
     currentSong.currentTime = 0;
 
+    pendingProgressPercent = null;
+    if (progressFrame) {
+        cancelAnimationFrame(progressFrame);
+        progressFrame = 0;
+    }
+
+    lastSongTimeText = "";
     animateSongTitle(songName);
 
     songTime.textContent =
@@ -1226,6 +1467,35 @@ function createSongItem(song, index) {
     const playIcon =
         document.createElement("img");
 
+    let selectInput = null;
+
+    if (localSongSelectionMode) {
+        const meta = getLocalSongMeta(song);
+
+        selectInput = document.createElement("input");
+        selectInput.type = "checkbox";
+        selectInput.className = "local-song-select";
+        selectInput.dataset.songId = meta?.id || "";
+        selectInput.checked = Boolean(meta && selectedLocalSongIds.has(meta.id));
+        selectInput.setAttribute(
+            "aria-label",
+            `Select ${name}`
+        );
+
+        selectInput.addEventListener("click", event => {
+            event.stopPropagation();
+        });
+
+        selectInput.addEventListener("pointerdown", event => {
+            event.stopPropagation();
+        });
+
+        selectInput.addEventListener("change", event => {
+            event.stopPropagation();
+            toggleLocalSongSelection(song);
+        });
+    }
+
     li.dataset.song = song;
     li.dataset.name = name;
     li.dataset.index = index;
@@ -1239,7 +1509,9 @@ function createSongItem(song, index) {
 
     li.setAttribute(
         "aria-label",
-        `Play ${name}`
+        localSongSelectionMode
+            ? `Select ${name}`
+            : `Play ${name}`
     );
 
     li.style.setProperty(
@@ -1250,6 +1522,10 @@ function createSongItem(song, index) {
     li.classList.add(
         "song-appear"
     );
+
+    if (localSongSelectionMode) {
+        li.classList.add("local-song-selection-mode");
+    }
 
     icon.className = "invert";
     icon.src = "svg files/music.svg";
@@ -1294,6 +1570,7 @@ function createSongItem(song, index) {
     });
 
     li.append(
+        ...(selectInput ? [selectInput] : []),
         icon,
         info,
         playNow,
@@ -1305,6 +1582,8 @@ function createSongItem(song, index) {
 
 function renderSongs(songs) {
     songList.innerHTML = "";
+    songItemCache.clear();
+    activeSongItem = null;
 
     if (!songs.length) {
         renderLocalLibraryMessage();
@@ -1313,6 +1592,7 @@ function renderSongs(songs) {
             libraryCount.textContent = "0 tracks";
         }
 
+        updateLocalSongSelectionUI();
         return;
     }
 
@@ -1320,13 +1600,11 @@ function renderSongs(songs) {
         document.createDocumentFragment();
 
     songs.forEach(
-        (song, index) =>
-            fragment.appendChild(
-                createSongItem(
-                    song,
-                    index
-                )
-            )
+        (song, index) => {
+            const item = createSongItem(song, index);
+            songItemCache.set(song, item);
+            fragment.appendChild(item);
+        }
     );
 
     songList.appendChild(
@@ -1341,6 +1619,8 @@ function renderSongs(songs) {
                     : "tracks"
             }`;
     }
+
+    updateLocalSongSelectionUI();
 }
 
 function showNoResults(
@@ -1412,9 +1692,11 @@ function searchSongs(value) {
             .map(item => ({
                 item,
                 score:
-                    fuzzyScore(
-                        item.dataset.name ||
-                            "",
+                    fuzzyScoreNormalized(
+                        getNormalizedSongName(
+                            item.dataset.song,
+                            item.dataset.name || ""
+                        ),
                         query
                     )
             }))
@@ -1576,7 +1858,10 @@ function setupSongControls() {
     songList.addEventListener(
         "click",
         event => {
-            if (event.target.closest(".local-song-remove")) {
+            if (
+                event.target.closest(".local-song-remove") ||
+                event.target.closest(".local-song-select")
+            ) {
                 return;
             }
 
@@ -1586,6 +1871,11 @@ function setupSongControls() {
                 );
 
             if (!item) {
+                return;
+            }
+
+            if (localSongSelectionMode) {
+                toggleLocalSongSelection(item.dataset.song);
                 return;
             }
 
@@ -1621,6 +1911,11 @@ function setupSongControls() {
             }
 
             event.preventDefault();
+
+            if (localSongSelectionMode) {
+                toggleLocalSongSelection(item.dataset.song);
+                return;
+            }
 
             currentIndex =
                 allSongs.indexOf(
@@ -1746,7 +2041,7 @@ function setProgressFromClientX(
     }
 
     const rect =
-        seekbar.getBoundingClientRect();
+        seekbarRect || seekbar.getBoundingClientRect();
 
     if (!rect.width) {
         return;
@@ -1789,6 +2084,7 @@ function setupSeekbar() {
             }
 
             isSeeking = true;
+            seekbarRect = seekbar.getBoundingClientRect();
 
             seekbar.setPointerCapture?.(
                 event.pointerId
@@ -1828,6 +2124,7 @@ function setupSeekbar() {
         }
 
         isSeeking = false;
+        seekbarRect = null;
     };
 
     seekbar.addEventListener(
@@ -1844,6 +2141,7 @@ function setupSeekbar() {
         "lostpointercapture",
         () => {
             isSeeking = false;
+            seekbarRect = null;
         }
     );
 
@@ -1953,7 +2251,7 @@ function setupAudio() {
                 ) &&
                 currentSong.duration > 0
             ) {
-                updateProgress(
+                scheduleProgress(
                     (
                         currentSong.currentTime /
                         currentSong.duration
@@ -2531,7 +2829,266 @@ function filterFolderSongs(value) {
         });
 }
 
+function installFolderModalMotionStyles() {
+    if (document.getElementById("folder-modal-motion-styles")) {
+        return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "folder-modal-motion-styles";
+    style.textContent = `
+        .folder-modal-backdrop.open .folder-modal {
+            animation: spootitifyFolderModalIn .58s cubic-bezier(.16,1,.3,1) both;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-header,
+        .folder-modal-backdrop.open .folder-modal-toolbar,
+        .folder-modal-backdrop.open .folder-modal-footer {
+            animation: spootitifyFolderModalSectionIn .46s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-header {
+            animation-delay: .06s;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-toolbar {
+            animation-delay: .11s;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-footer {
+            animation-delay: .18s;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-art-wrap {
+            animation: spootitifyFolderArtIn .62s cubic-bezier(.16,1,.3,1) .10s both;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-heading > * {
+            animation: spootitifyFolderTextIn .46s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-heading .folder-modal-eyebrow {
+            animation-delay: .12s;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-heading h2 {
+            animation-delay: .16s;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-heading .folder-modal-description {
+            animation-delay: .20s;
+        }
+
+        .folder-modal-backdrop.open .folder-modal-heading .folder-modal-count {
+            animation-delay: .24s;
+        }
+
+        .folder-modal-backdrop.open .folder-song-list > .folder-song,
+        .folder-modal-backdrop.open .folder-song-list > .folder-empty {
+            animation: spootitifyFolderRowIn .38s cubic-bezier(.22,1,.36,1) both;
+            animation-delay: calc(.20s + (var(--row-index, 0) * .035s));
+        }
+
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(1) { --row-index: 0; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(2) { --row-index: 1; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(3) { --row-index: 2; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(4) { --row-index: 3; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(5) { --row-index: 4; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(6) { --row-index: 5; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(7) { --row-index: 6; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(8) { --row-index: 7; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(9) { --row-index: 8; }
+        .folder-modal-backdrop.open .folder-song-list > .folder-song:nth-child(10) { --row-index: 9; }
+
+        .create-folder-modal-backdrop.open .create-folder-modal {
+            animation: spootitifyCreateFolderModalIn .58s cubic-bezier(.16,1,.3,1) both;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-modal-header,
+        .create-folder-modal-backdrop.open .create-folder-preview-column,
+        .create-folder-modal-backdrop.open .create-folder-fields,
+        .create-folder-modal-backdrop.open .create-folder-footer {
+            animation: spootitifyFolderSectionIn .46s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-modal-header {
+            animation-delay: .06s;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-preview-column {
+            animation-delay: .10s;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-fields {
+            animation-delay: .14s;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-footer {
+            animation-delay: .20s;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-preview-art {
+            animation: spootitifyCreateFolderArtIn .60s cubic-bezier(.16,1,.3,1) .14s both;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-field,
+        .create-folder-modal-backdrop.open .create-folder-tip,
+        .create-folder-modal-backdrop.open .create-folder-error {
+            animation: spootitifyCreateFolderFieldIn .42s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        .create-folder-modal-backdrop.open .create-folder-field:nth-child(1) { animation-delay: .20s; }
+        .create-folder-modal-backdrop.open .create-folder-field:nth-child(2) { animation-delay: .25s; }
+        .create-folder-modal-backdrop.open .create-folder-tip { animation-delay: .30s; }
+        .create-folder-modal-backdrop.open .create-folder-error { animation-delay: .34s; }
+
+        @keyframes spootitifyFolderModalIn {
+            0% {
+                opacity: 0;
+                transform: translate3d(0, 26px, 0) scale(.94) rotateX(2deg);
+                filter: blur(4px);
+            }
+            62% {
+                opacity: 1;
+                transform: translate3d(0, -3px, 0) scale(1.008) rotateX(0);
+                filter: blur(0);
+            }
+            100% {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(1) rotateX(0);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes spootitifyCreateFolderModalIn {
+            0% {
+                opacity: 0;
+                transform: translate3d(0, 30px, 0) scale(.935) rotateX(2deg);
+                filter: blur(5px);
+            }
+            62% {
+                opacity: 1;
+                transform: translate3d(0, -3px, 0) scale(1.008) rotateX(0);
+                filter: blur(0);
+            }
+            100% {
+                opacity: 1;
+                transform: translate3d(0, 0, 0) scale(1) rotateX(0);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes spootitifyFolderModalSectionIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes spootitifyFolderSectionIn {
+            from {
+                opacity: 0;
+                transform: translateY(14px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes spootitifyFolderArtIn {
+            from {
+                opacity: 0;
+                transform: translateY(9px) scale(.86) rotate(-2deg);
+                filter: blur(4px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1) rotate(0);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes spootitifyCreateFolderArtIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px) scale(.88) rotate(-1.5deg);
+                filter: blur(4px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1) rotate(0);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes spootitifyFolderTextIn {
+            from {
+                opacity: 0;
+                transform: translateY(7px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes spootitifyFolderRowIn {
+            from {
+                opacity: 0;
+                transform: translateY(9px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes spootitifyCreateFolderFieldIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .folder-modal-backdrop.open .folder-modal,
+            .folder-modal-backdrop.open .folder-modal-header,
+            .folder-modal-backdrop.open .folder-modal-toolbar,
+            .folder-modal-backdrop.open .folder-modal-footer,
+            .folder-modal-backdrop.open .folder-modal-art-wrap,
+            .folder-modal-backdrop.open .folder-modal-heading > *,
+            .folder-modal-backdrop.open .folder-song-list > .folder-song,
+            .folder-modal-backdrop.open .folder-song-list > .folder-empty,
+            .create-folder-modal-backdrop.open .create-folder-modal,
+            .create-folder-modal-backdrop.open .create-folder-modal-header,
+            .create-folder-modal-backdrop.open .create-folder-preview-column,
+            .create-folder-modal-backdrop.open .create-folder-fields,
+            .create-folder-modal-backdrop.open .create-folder-footer,
+            .create-folder-modal-backdrop.open .create-folder-preview-art,
+            .create-folder-modal-backdrop.open .create-folder-field,
+            .create-folder-modal-backdrop.open .create-folder-tip,
+            .create-folder-modal-backdrop.open .create-folder-error {
+                animation: none !important;
+                filter: none !important;
+            }
+        }
+    `;
+
+    document.head.appendChild(style);
+}
+
 function createFolderModal() {
+    installFolderModalMotionStyles();
+
     if (folderModal) {
         return folderModal;
     }
@@ -3215,7 +3772,49 @@ function removeSongFromFolder(folder, song) {
         }
     }
 
-    renderFolderSavedView(folder);
+    if (folderModal && activeFolderId === folder.id) {
+        const row = $$(
+            ".folder-saved-song",
+            folderModal
+        ).find(
+            item =>
+                getFolderSongIdentity(item.dataset.song) === identity
+        );
+
+        row?.remove();
+
+        const remaining = getFolderSongs(folder.id);
+        setFolderHeader(folder, remaining.length, "saved");
+
+        const summary = $(
+            ".folder-saved-summary strong",
+            folderModal
+        );
+
+        if (summary) {
+            summary.textContent =
+                `${remaining.length} ${remaining.length === 1 ? "song" : "songs"}`;
+        }
+
+        $$(".folder-song-number", folderModal).forEach(
+            (number, index) =>
+                number.textContent =
+                    String(index + 1).padStart(2, "0")
+        );
+
+        const playFolder = $(
+            ".folder-play-folder",
+            folderModal
+        );
+
+        if (playFolder) {
+            playFolder.disabled = remaining.length === 0;
+        }
+
+        if (!remaining.length) {
+            renderFolderSavedView(folder);
+        }
+    }
 }
 
 function startFolderPlayback(
@@ -3650,6 +4249,8 @@ function showCreateFolderError(message = "") {
 }
 
 function createCreateFolderModal() {
+    installFolderModalMotionStyles();
+
     if (newFolderModal) {
         return newFolderModal;
     }
@@ -5045,22 +5646,22 @@ main().catch(
     const LAYER_SPEC = [
         {
             share: 0.56, softness: 2, cell: 94,
-            sizeMin: 0.12, sizeMax: 0.30,
-            alphaMin: 0.13, alphaMax: 0.25,
+            sizeMin: 1.35, sizeMax: 1.95,
+            alphaMin: 0.18, alphaMax: 0.30,
             flowScale: 0.0016, flowSpeed: 0.55, flowAmp: 10,
             relax: 0.075, agility: 0.34, maxSpeed: 70
         },
         {
             share: 0.32, softness: 1, cell: 72,
-            sizeMin: 0.22, sizeMax: 0.44,
-            alphaMin: 0.14, alphaMax: 0.29,
+            sizeMin: 1.65, sizeMax: 2.45,
+            alphaMin: 0.20, alphaMax: 0.34,
             flowScale: 0.0026, flowSpeed: 0.85, flowAmp: 18,
             relax: 0.035, agility: 0.78, maxSpeed: 220
         },
         {
             share: 0.12, softness: 0, cell: 58,
-            sizeMin: 0.32, sizeMax: 0.62,
-            alphaMin: 0.16, alphaMax: 0.34,
+            sizeMin: 1.95, sizeMax: 2.85,
+            alphaMin: 0.22, alphaMax: 0.38,
             flowScale: 0.0038, flowSpeed: 1.15, flowAmp: 30,
             relax: 0.020, agility: 1.30, maxSpeed: 280
         }
@@ -6185,7 +6786,10 @@ main().catch(
             if (colour < particle.colourLow) { colour = particle.colourLow; }
             if (colour > particle.colourHigh) { colour = particle.colourHigh; }
 
-            const glow = particle.size * particle.reach * (1 + particle.flash * 0.35);
+            const glow = Math.max(
+                1.55,
+                particle.size * particle.reach * (1 + particle.flash * 0.35)
+            );
 
             ctx.globalAlpha = alpha;
 
@@ -6196,6 +6800,36 @@ main().catch(
                 glow * 2,
                 glow * 2
             );
+
+            const coreRadius = Math.max(
+                0.72,
+                particle.size * 0.38 * (1 + particle.flash * 0.25)
+            );
+
+            ctx.globalAlpha = Math.min(
+                0.78,
+                alpha * 1.12
+            );
+
+            ctx.fillStyle = RAMP[
+                Math.max(
+                    0,
+                    Math.min(
+                        RAMP.length - 1,
+                        colour
+                    )
+                )
+            ];
+
+            ctx.beginPath();
+            ctx.arc(
+                particle.x,
+                particle.y,
+                coreRadius,
+                0,
+                TAU
+            );
+            ctx.fill();
         }
 
         ctx.globalAlpha = 1;
@@ -6599,9 +7233,15 @@ main().catch(
 
         state.layerEl = layerEl;
         state.cloudCanvas = cloudCanvas;
-        state.cloudCtx = cloudCanvas.getContext("2d");
+        state.cloudCtx = cloudCanvas.getContext("2d", {
+            alpha: true,
+            desynchronized: true
+        });
         state.dotCanvas = dotCanvas;
-        state.dotCtx = dotCanvas.getContext("2d");
+        state.dotCtx = dotCanvas.getContext("2d", {
+            alpha: true,
+            desynchronized: true
+        });
 
         state.sprites = buildSprites();
 
