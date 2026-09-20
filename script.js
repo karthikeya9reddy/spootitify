@@ -4470,22 +4470,22 @@ main().catch(
     const LAYER_SPEC = [
         {
             share: 0.56, softness: 2, cell: 94,
-            sizeMin: 0.12, sizeMax: 0.30,
-            alphaMin: 0.13, alphaMax: 0.25,
+            sizeMin: 0.28, sizeMax: 0.52,
+            alphaMin: 0.16, alphaMax: 0.30,
             flowScale: 0.0016, flowSpeed: 0.55, flowAmp: 10,
             relax: 0.075, agility: 0.34, maxSpeed: 70
         },
         {
             share: 0.32, softness: 1, cell: 72,
-            sizeMin: 0.22, sizeMax: 0.44,
-            alphaMin: 0.14, alphaMax: 0.29,
+            sizeMin: 0.34, sizeMax: 0.66,
+            alphaMin: 0.18, alphaMax: 0.34,
             flowScale: 0.0026, flowSpeed: 0.85, flowAmp: 18,
             relax: 0.035, agility: 0.78, maxSpeed: 220
         },
         {
             share: 0.12, softness: 0, cell: 58,
-            sizeMin: 0.32, sizeMax: 0.62,
-            alphaMin: 0.16, alphaMax: 0.34,
+            sizeMin: 0.42, sizeMax: 0.82,
+            alphaMin: 0.20, alphaMax: 0.38,
             flowScale: 0.0038, flowSpeed: 1.15, flowAmp: 30,
             relax: 0.020, agility: 1.30, maxSpeed: 280
         }
@@ -4500,16 +4500,18 @@ main().catch(
         ".nebula-layer {",
         "    position: absolute;",
         "    inset: 0;",
-        "    z-index: 0;",
+        "    z-index: 5;",
         "    overflow: hidden;",
         "    pointer-events: none;",
         "    border-radius: inherit;",
         "    background: transparent;",
+        "    opacity: 1;",
+        "    mix-blend-mode: screen;",
         "}",
         "",
         "." + HOST_CLASS + " > :not(.nebula-layer) {",
         "    position: relative;",
-        "    z-index: 1;",
+        "    z-index: 6;",
         "}",
         "",
         ".nebula-layer canvas {",
@@ -5206,16 +5208,16 @@ main().catch(
 
     function buildClouds() {
         const tints = [
-            ["rgba(28,150,88,0.16)", "rgba(24,120,74,0.07)"],
-            ["rgba(34,196,132,0.13)", "rgba(26,140,96,0.06)"],
-            ["rgba(28,180,168,0.12)", "rgba(20,120,120,0.05)"],
-            ["rgba(40,160,210,0.10)", "rgba(28,104,150,0.045)"],
-            ["rgba(96,126,220,0.07)", "rgba(58,74,150,0.03)"],
-            ["rgba(140,110,220,0.055)", "rgba(88,70,150,0.025)"],
-            ["rgba(180,255,214,0.05)", "rgba(120,200,164,0.022)"]
+            ["rgba(28,150,88,0.25)", "rgba(24,120,74,0.12)"],
+            ["rgba(34,196,132,0.22)", "rgba(26,140,96,0.11)"],
+            ["rgba(28,180,168,0.20)", "rgba(20,120,120,0.09)"],
+            ["rgba(40,160,210,0.16)", "rgba(28,104,150,0.075)"],
+            ["rgba(96,126,220,0.11)", "rgba(58,74,150,0.055)"],
+            ["rgba(140,110,220,0.08)", "rgba(88,70,150,0.045)"],
+            ["rgba(180,255,214,0.08)", "rgba(120,200,164,0.04)"]
         ];
 
-        const count = state.coarse ? 7 : 11;
+        const count = state.coarse ? 9 : 15;
         const clouds = [];
 
         for (let i = 0; i < count; i++) {
@@ -5303,9 +5305,9 @@ main().catch(
         const coreRadius = reference * 0.16;
         const coreGradient = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, coreRadius);
 
-        coreGradient.addColorStop(0, "rgba(84,255,178,0.045)");
-        coreGradient.addColorStop(0.36, "rgba(40,180,210,0.025)");
-        coreGradient.addColorStop(0.72, "rgba(96,100,220,0.012)");
+        coreGradient.addColorStop(0, "rgba(84,255,178,0.08)");
+        coreGradient.addColorStop(0.36, "rgba(40,180,210,0.045)");
+        coreGradient.addColorStop(0.72, "rgba(96,100,220,0.025)");
         coreGradient.addColorStop(1, "rgba(0,0,0,0)");
 
         ctx.globalAlpha = 1;
@@ -5327,8 +5329,8 @@ main().catch(
             const ey = sy + Math.sin(angle + 2.45) * sweep * 0.48;
             const grad = ctx.createLinearGradient(sx, sy, ex, ey);
 
-            grad.addColorStop(0, "rgba(64,230,175,0.022)");
-            grad.addColorStop(0.5, "rgba(55,195,225,0.014)");
+            grad.addColorStop(0, "rgba(64,230,175,0.042)");
+            grad.addColorStop(0.5, "rgba(55,195,225,0.028)");
             grad.addColorStop(1, "rgba(0,0,0,0)");
 
             ctx.strokeStyle = grad;
