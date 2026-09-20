@@ -1,16 +1,15 @@
 const LOCAL_SONGS_INDEX = "http://127.0.0.1:3000/songs/";
-const GITHUB_SONGS_API = "https://api.github.com/repos/karthikeya9reddy/spootitify/contents/songs";
+const GITHUB_REPOSITORY_FALLBACK = "karthikeya9reddy/spootitify";
+const GITHUB_BRANCH = "main";
+const GITHUB_SONG_DIRECTORIES = ["songs", "Songs"];
 const USING_LOCAL_SONG_SERVER =
     location.hostname === "localhost" ||
     location.hostname === "127.0.0.1" ||
     location.hostname === "0.0.0.0";
-const SONGS_INDEX = USING_LOCAL_SONG_SERVER
-    ? LOCAL_SONGS_INDEX
-    : GITHUB_SONGS_API;
 
 const currentSong = new Audio();
-currentSong.preload = "metadata";
 currentSong.crossOrigin = "anonymous";
+currentSong.preload = "metadata";
 
 let allSongs = [];
 let currentIndex = 0;
@@ -315,28 +314,11 @@ function secondsToMinutesSeconds(seconds) {
     return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-async function getsongs() {
-    const response = await fetch(SONGS_INDEX, { cache: "no-store" });
+async function getLocalSongs() {
+    const response = await fetch(LOCAL_SONGS_INDEX, { cache: "no-store" });
+
     if (!response.ok) {
-        throw new Error(`${USING_LOCAL_SONG_SERVER ? "Song server" : "GitHub Songs API"} returned ${response.status}`);
-    }
-
-    if (!USING_LOCAL_SONG_SERVER) {
-        const files = await response.json();
-
-        if (!Array.isArray(files)) {
-            throw new Error("GitHub Songs API did not return a file list");
-        }
-
-        return files
-            .filter(file =>
-                file &&
-                file.type === "file" &&
-                typeof file.name === "string" &&
-                file.name.toLowerCase().endsWith(".mp3") &&
-                typeof file.download_url === "string"
-            )
-            .map(file => file.download_url);
+        throw new Error(`Local song server returned ${response.status}`);
     }
 
     const div = document.createElement("div");
@@ -345,7 +327,162 @@ async function getsongs() {
     return [...div.querySelectorAll("a")]
         .map(link => link.textContent.trim())
         .filter(name => name.toLowerCase().endsWith(".mp3"))
-        .map(name => SONGS_INDEX + encodeURIComponent(name));
+        .map(name => LOCAL_SONGS_INDEX + encodeURIComponent(name));
+}
+
+function getGitHubRepository() {
+    const host = location.hostname.toLowerCase();
+    const parts = location.pathname.split("/").filter(Boolean);
+
+    if (host.endsWith(".github.io")) {
+        const owner = host.slice(0, -".github.io".length);
+        const repo = parts[0] || GITHUB_REPOSITORY_FALLBACK.split("/")[1];
+
+        if (owner && repo) {
+            return { owner, repo };
+        }
+    }
+
+    const [owner, repo] = GITHUB_REPOSITORY_FALLBACK.split("/");
+    return { owner, repo };
+}
+
+function encodeGitHubPath(path) {
+    return path
+        .split("/")
+        .filter(Boolean)
+        .map(segment => encodeURIComponent(segment))
+        .join("/");
+}
+
+async function getGitHubFolderEntries(owner, repo, folderPath, visited) {
+    const key = folderPath.toLowerCase();
+
+    if (visited.has(key)) {
+        return [];
+    }
+
+    visited.add(key);
+
+    const url =
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeGitHubPath(folderPath)}?ref=${encodeURIComponent(GITHUB_BRANCH)}`;
+
+    const response = await fetch(url, {
+        cache: "no-store",
+        headers: {
+            Accept: "application/vnd.github+json"
+        }
+    });
+
+    if (response.status === 404) {
+        return null;
+    }
+
+    if (!response.ok) {
+        let detail = "";
+        try {
+            const data = await response.json();
+            detail = data?.message ? `: ${data.message}` : "";
+        } catch {
+        }
+        throw new Error(`GitHub Songs API returned ${response.status}${detail}`);
+    }
+
+    const entries = await response.json();
+
+    if (!Array.isArray(entries)) {
+        throw new Error("GitHub Songs API did not return a folder listing");
+    }
+
+    const files = [];
+
+    for (const entry of entries) {
+        if (!entry || typeof entry.path !== "string") {
+            continue;
+        }
+
+        if (entry.type === "file" && entry.name?.toLowerCase().endsWith(".mp3")) {
+            files.push(entry);
+            continue;
+        }
+
+        if (entry.type === "dir") {
+            const nested = await getGitHubFolderEntries(
+                owner,
+                repo,
+                entry.path,
+                visited
+            );
+
+            if (nested) {
+                files.push(...nested);
+            }
+        }
+    }
+
+    return files;
+}
+
+async function getGitHubSongs() {
+    const { owner, repo } = getGitHubRepository();
+    const visited = new Set();
+    let foundDirectory = false;
+    const allFiles = [];
+
+    for (const directory of GITHUB_SONG_DIRECTORIES) {
+        const entries = await getGitHubFolderEntries(
+            owner,
+            repo,
+            directory,
+            visited
+        );
+
+        if (entries !== null) {
+            foundDirectory = true;
+            allFiles.push(...entries);
+        }
+    }
+
+    const unique = new Map();
+
+    allFiles.forEach(file => {
+        const pathKey = String(file.path).toLowerCase();
+        if (!unique.has(pathKey)) {
+            unique.set(pathKey, file);
+        }
+    });
+
+    if (!foundDirectory) {
+        throw new Error(
+            `GitHub could not find a songs folder in ${owner}/${repo}`
+        );
+    }
+
+    const songs = [...unique.values()]
+        .map(file => {
+            if (typeof file.download_url === "string" && file.download_url) {
+                return file.download_url;
+            }
+
+            return `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(GITHUB_BRANCH)}/${encodeGitHubPath(file.path)}`;
+        })
+        .filter(Boolean);
+
+    if (!songs.length) {
+        throw new Error(
+            `The songs folder exists, but no MP3 files were found in ${owner}/${repo}`
+        );
+    }
+
+    return songs;
+}
+
+async function getsongs() {
+    if (USING_LOCAL_SONG_SERVER) {
+        return getLocalSongs();
+    }
+
+    return getGitHubSongs();
 }
 
 function getSongName(songURL) {
@@ -4279,9 +4416,7 @@ async function main() {
 
         showNoResults(
             "Music library unavailable",
-            USING_LOCAL_SONG_SERVER
-                ? "Make sure your local song server is running."
-                : "Make sure your MP3 files are inside the GitHub songs folder."
+            "Check that the songs folder and MP3 files are present in the GitHub repository."
         );
 
         if (libraryCount) {
