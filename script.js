@@ -2434,11 +2434,8 @@ function setupCursor() {
             raf =
                 requestAnimationFrame(
                     () => {
-                        light.style.left =
-                            `${x}px`;
-
-                        light.style.top =
-                            `${y}px`;
+                        light.style.transform =
+                            `translate3d(${x}px, ${y}px, 0) translate3d(-50%, -50%, 0)`;
 
                         light.style.opacity =
                             "1";
@@ -4993,17 +4990,52 @@ function setupFolderFeature() {
 }
 
 function setupCreateFolderFeature() {
-    const button =
-        $(".create-folder-button");
+    const playlistHead = $(".playlist-head");
 
-    if (!button) {
+    if (!playlistHead) {
         return;
     }
 
-    button.addEventListener(
-        "click",
-        () => openCreateFolderModal()
-    );
+    let actions = $(".playlist-actions", playlistHead);
+    const existingPill = $(".playlist-pill", playlistHead);
+
+    if (!actions) {
+        actions = document.createElement("div");
+        actions.className = "playlist-actions";
+
+        if (existingPill) {
+            actions.appendChild(existingPill);
+        }
+
+        playlistHead.appendChild(actions);
+    }
+
+    let button = $(".create-folder-button", actions);
+
+    if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = "create-folder-button";
+        button.setAttribute("aria-label", "Create a new folder");
+
+        button.innerHTML = `
+            <span class="create-folder-plus" aria-hidden="true">
+                <span></span>
+                <span></span>
+            </span>
+            <span class="create-folder-label">New folder</span>
+        `;
+
+        actions.insertBefore(button, actions.firstChild);
+    }
+
+    if (!button.dataset.folderFeatureBound) {
+        button.dataset.folderFeatureBound = "true";
+        button.addEventListener(
+            "click",
+            () => openCreateFolderModal()
+        );
+    }
 }
 
 
@@ -5598,10 +5630,10 @@ main().catch(
     const PAD = 78;              // off-canvas margin where particles wrap
     const FADE_BAND = 104;       // fade ramp width (mostly outside the canvas)
     const SPRITE_SIZE = 24;      // glow sprite resolution
-    const CLOUD_DIVISOR = 10;     // nebula canvas renders at 1/7 scale
-    const FIELD_REBUILD = 8;     // frames between flow-field rebuilds
+    const CLOUD_DIVISOR = 12;     // nebula canvas renders at a lighter internal scale
+    const FIELD_REBUILD = 10;     // frames between flow-field rebuilds
     const CLOUD_REBUILD = 5;     // frames between nebula redraws
-    const RECT_REFRESH = 20;     // frames between host rect reads
+    const RECT_REFRESH = 24;     // frames between host rect reads
 
     const POINTER_RADIUS_MIN = 130;
     const POINTER_RADIUS_MAX = 330;
@@ -5680,6 +5712,7 @@ main().catch(
         "    overflow: hidden;",
         "    pointer-events: none;",
         "    border-radius: inherit;",
+        "    contain: paint;",
         "    background: transparent;",
         "}",
         "",
@@ -6084,7 +6117,7 @@ main().catch(
      * ------------------------------------------------------------------ */
 
     function pixelBudget() {
-        return state.coarse ? 450000 : 1200000;
+        return state.coarse ? 300000 : 760000;
     }
 
     function desiredCount(width, height) {
@@ -6093,28 +6126,28 @@ main().catch(
         let count;
 
         if (!state.coarse && width >= 1400) {
-            count = Math.min(area / 700, 1200);
+            count = Math.min(area / 1050, 800);
         } else if (width >= 900) {
-            count = Math.min(area / 900, 800);
+            count = Math.min(area / 1250, 540);
         } else {
-            count = Math.min(area / 1000, 450);
+            count = Math.min(area / 1450, 300);
         }
 
         const cores = navigator.hardwareConcurrency || 8;
 
         if (cores <= 2) {
-            count *= 0.55;
+            count *= 0.50;
         } else if (cores <= 4) {
-            count *= 0.70;
+            count *= 0.65;
         }
 
         if (state.reduced) {
             count *= 0.30;
         }
 
-        count *= Math.pow(0.82, state.degrade);
+        count *= Math.pow(0.80, state.degrade);
 
-        return Math.max(140, Math.round(count));
+        return Math.max(120, Math.round(count));
     }
 
     function measure() {
@@ -6393,7 +6426,7 @@ main().catch(
             ["rgba(180,255,214,0.05)", "rgba(120,200,164,0.022)"]
         ];
 
-        const count = state.coarse ? 2 : 4;
+        const count = state.coarse ? 1 : 3;
         const clouds = [];
 
         for (let i = 0; i < count; i++) {

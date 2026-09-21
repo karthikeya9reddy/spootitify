@@ -1331,6 +1331,9 @@ body {
 
 .cursor-light {
     position: fixed;
+    left: 0;
+    top: 0;
+    will-change: transform, opacity;
     width: 220px;
     height: 220px;
     border-radius: 50%;

@@ -73,8 +73,6 @@
                     <span class="status-dot"></span>
                     <span id="playerStatus">Ready to play</span>
                 </div>
-
-                
             </header>
 
             <section class="musicplaylists" aria-labelledby="playlistTitle">
@@ -84,18 +82,33 @@
                         <h1 id="playlistTitle">Spootitify Playlists</h1>
                         <p>Your music, your player, no interruptions.</p>
                     </div>
-                    <div class="playlist-pill">PERSONAL MODE</div>
+
+                    <div class="playlist-actions">
+                        <button class="create-folder-button" type="button" aria-label="Create a new folder">
+                            <span class="create-folder-plus" aria-hidden="true">
+                                <span></span>
+                                <span></span>
+                            </span>
+                            <span class="create-folder-label">New folder</span>
+                        </button>
+                        <div class="playlist-pill">PERSONAL MODE</div>
+                    </div>
                 </div>
 
                 <div class="cardcontainer">
-                    <article class="card folder-card" data-folder-id="happy-hits" data-folder-name="Happy Hits!" data-folder-description="Bright tracks for instant good vibes.">
+                    <article class="card folder-card"
+                        data-folder-id="happy-hits"
+                        data-folder-name="Happy Hits!"
+                        data-folder-description="Bright tracks for instant good vibes.">
                         <div class="play" role="button" tabindex="0" aria-label="Play Happy Hits">
                             <svg width="50" height="40" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                                 <circle cx="25" cy="25" r="24" fill="#16e05b" />
                                 <path d="M21 16l14 9-14 9z" />
                             </svg>
                         </div>
-                        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ3652Frz1fJMf1b1pfbeqBECP0FyNy_b8ONXfNSPVN2g&s=10" alt="Happy Hits artwork" loading="lazy">
+                        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ3652Frz1fJMf1b1pfbeqBECP0FyNy_b8ONXfNSPVN2g&s=10"
+                            alt="Happy Hits artwork"
+                            loading="lazy">
                         <h3>Happy Hits!</h3>
                         <p>Bright tracks for instant good vibes.</p>
                     </article>
