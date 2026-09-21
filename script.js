@@ -2421,6 +2421,16 @@ function setupCursor() {
     let x = 0;
     let y = 0;
 
+    const render = () => {
+        light.style.transform =
+            `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
+
+        light.style.opacity =
+            "1";
+
+        raf = 0;
+    };
+
     document.addEventListener(
         "mousemove",
         event => {
@@ -2432,21 +2442,9 @@ function setupCursor() {
             }
 
             raf =
-                requestAnimationFrame(
-                    () => {
-                        light.style.left =
-                            `${x}px`;
-
-                        light.style.top =
-                            `${y}px`;
-
-                        light.style.opacity =
-                            "1";
-
-                        raf = 0;
-                    }
-                );
-        }
+                requestAnimationFrame(render);
+        },
+        { passive: true }
     );
 
     document.addEventListener(
