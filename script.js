@@ -2421,16 +2421,6 @@ function setupCursor() {
     let x = 0;
     let y = 0;
 
-    const render = () => {
-        light.style.transform =
-            `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
-
-        light.style.opacity =
-            "1";
-
-        raf = 0;
-    };
-
     document.addEventListener(
         "mousemove",
         event => {
@@ -2442,9 +2432,21 @@ function setupCursor() {
             }
 
             raf =
-                requestAnimationFrame(render);
-        },
-        { passive: true }
+                requestAnimationFrame(
+                    () => {
+                        light.style.left =
+                            `${x}px`;
+
+                        light.style.top =
+                            `${y}px`;
+
+                        light.style.opacity =
+                            "1";
+
+                        raf = 0;
+                    }
+                );
+        }
     );
 
     document.addEventListener(
@@ -5595,11 +5597,11 @@ main().catch(
 
     const PAD = 78;              // off-canvas margin where particles wrap
     const FADE_BAND = 104;       // fade ramp width (mostly outside the canvas)
-    const SPRITE_SIZE = 28;      // glow sprite resolution
-    const CLOUD_DIVISOR = 7;     // nebula canvas renders at 1/7 scale
-    const FIELD_REBUILD = 5;     // frames between flow-field rebuilds
-    const CLOUD_REBUILD = 3;     // frames between nebula redraws
-    const RECT_REFRESH = 12;     // frames between host rect reads
+    const SPRITE_SIZE = 24;      // glow sprite resolution
+    const CLOUD_DIVISOR = 10;     // nebula canvas renders at 1/7 scale
+    const FIELD_REBUILD = 8;     // frames between flow-field rebuilds
+    const CLOUD_REBUILD = 5;     // frames between nebula redraws
+    const RECT_REFRESH = 20;     // frames between host rect reads
 
     const POINTER_RADIUS_MIN = 130;
     const POINTER_RADIUS_MAX = 330;
@@ -6082,7 +6084,7 @@ main().catch(
      * ------------------------------------------------------------------ */
 
     function pixelBudget() {
-        return state.coarse ? 1100000 : 2600000;
+        return state.coarse ? 450000 : 1200000;
     }
 
     function desiredCount(width, height) {
@@ -6091,26 +6093,28 @@ main().catch(
         let count;
 
         if (!state.coarse && width >= 1400) {
-            count = Math.min(area / 180, 12000);
+            count = Math.min(area / 700, 1200);
         } else if (width >= 900) {
-            count = Math.min(area / 240, 8500);
+            count = Math.min(area / 900, 800);
         } else {
-            count = Math.min(area / 120, 4200);
+            count = Math.min(area / 1000, 450);
         }
 
         const cores = navigator.hardwareConcurrency || 8;
 
-        if (cores <= 4) {
-            count *= 0.88;
+        if (cores <= 2) {
+            count *= 0.55;
+        } else if (cores <= 4) {
+            count *= 0.70;
         }
 
         if (state.reduced) {
             count *= 0.30;
         }
 
-        count *= Math.pow(0.90, state.degrade);
+        count *= Math.pow(0.82, state.degrade);
 
-        return Math.max(220, Math.round(count));
+        return Math.max(140, Math.round(count));
     }
 
     function measure() {
@@ -6389,7 +6393,7 @@ main().catch(
             ["rgba(180,255,214,0.05)", "rgba(120,200,164,0.022)"]
         ];
 
-        const count = state.coarse ? 7 : 11;
+        const count = state.coarse ? 2 : 4;
         const clouds = [];
 
         for (let i = 0; i < count; i++) {
