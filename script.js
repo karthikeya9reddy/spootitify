@@ -1763,45 +1763,35 @@ function togglePlay() {
 }
 
 function nextSong() {
-    const queue =
-        folderQueue.length
-            ? folderQueue
-            : allSongs;
-
-    if (!queue.length) {
-        return;
-    }
-
     if (folderQueue.length) {
-        folderQueueIndex =
-            (folderQueueIndex + 1) %
-            folderQueue.length;
-
-        const songURL =
-            folderQueue[folderQueueIndex];
-
-        playMusic(
-            songURL,
-            getSongName(songURL),
-            true,
-            "folder"
-        );
-
+        const queue = folderQueue.filter(song => allSongs.includes(song));
+        if (!queue.length) {
+            activeFolderId = null;
+            folderQueue = [];
+            folderQueueIndex = -1;
+            window.updateFolderPlaybackUI?.();
+            return;
+        }
+        folderQueue = queue;
+        const currentPosition = folderQueueIndex >= 0 ? folderQueueIndex : Math.max(0, folderQueue.indexOf(currentSong.src));
+        const nextIndex = currentPosition + 1;
+        if (nextIndex >= folderQueue.length) {
+            folderQueueIndex = folderQueue.length - 1;
+            currentSong.pause();
+            window.updateFolderPlaybackUI?.();
+            updatePlayerVisuals();
+            setPlayerStatus("Folder finished");
+            return;
+        }
+        folderQueueIndex = nextIndex;
+        const songURL = folderQueue[folderQueueIndex];
+        playMusic(songURL, getSongName(songURL), true, "folder");
+        window.updateFolderPlaybackUI?.();
         return;
     }
-
-    currentIndex =
-        (currentIndex + 1) %
-        allSongs.length;
-
-    playMusic(
-        allSongs[currentIndex],
-        getSongName(
-            allSongs[currentIndex]
-        ),
-        true,
-        "library"
-    );
+    if (!allSongs.length) return;
+    currentIndex = (currentIndex + 1) % allSongs.length;
+    playMusic(allSongs[currentIndex], getSongName(allSongs[currentIndex]), true, "library");
 }
 
 function previousSong() {
@@ -2591,21 +2581,37 @@ function getFolderCardData(card) {
         "folder-" +
             [...$$(".card")].indexOf(card);
 
+    const storedCustom =
+        customFolders[folderId] && typeof customFolders[folderId] === "object"
+            ? customFolders[folderId]
+            : null;
+
+    const storedFolder =
+        folders[folderId] && typeof folders[folderId] === "object"
+            ? folders[folderId]
+            : null;
+
     const title =
+        storedCustom?.title ||
+        storedFolder?.title ||
         card.dataset.folderName ||
         $(".card-title", card)?.textContent.trim() ||
         $(".card h3", card)?.textContent.trim() ||
         "My Folder";
 
     const description =
+        storedCustom?.description ||
+        storedFolder?.description ||
         card.dataset.folderDescription ||
         $(".card-description", card)?.textContent.trim() ||
         $(".card p", card)?.textContent.trim() ||
         "Your saved songs.";
 
     const image =
+        storedCustom?.image ||
+        storedFolder?.image ||
         $("img", card)?.getAttribute("src") ||
-        "";
+        DEFAULT_FOLDER_ART;
 
     return {
         id: folderId,
@@ -2613,7 +2619,8 @@ function getFolderCardData(card) {
         description,
         image,
         custom:
-            folders[folderId]?.custom === true ||
+            storedCustom?.custom === true ||
+            storedFolder?.custom === true ||
             card.dataset.customFolder === "true"
     };
 }
@@ -3177,6 +3184,8 @@ function renderFolderPickerView(folder) {
     const modal =
         createFolderModal();
 
+    modal.dataset.folderId = String(folder.id);
+
     const savedSongs =
         getFolderSongs(folder.id);
 
@@ -3196,6 +3205,8 @@ function renderFolderPickerView(folder) {
     const footer =
         $(".folder-modal-footer", modal);
 
+    footer.classList.add("folder-picker-footer");
+
     setFolderHeader(
         folder,
         savedSongs.length,
@@ -3213,18 +3224,29 @@ function renderFolderPickerView(folder) {
             >
         </label>
 
-        <div class="folder-toolbar-actions">
+        <div class="folder-toolbar-actions folder-toolbar-actions-enhanced">
             <button type="button" class="folder-select-all">Select all</button>
             <button type="button" class="folder-clear-all">Clear</button>
             <span class="folder-selection-count">0 selected</span>
+            <div class="folder-header-menu-wrap">
+                <button
+                    type="button"
+                    class="folder-header-menu-button"
+                    aria-label="Folder options"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    title="Folder options"
+                ><span aria-hidden="true">⋯</span></button>
+                <div class="folder-header-menu" role="menu" hidden>
+                    <button type="button" data-folder-header-action="edit" role="menuitem">Edit folder</button>
+                    <button type="button" data-folder-header-action="delete" role="menuitem">Delete folder</button>
+                </div>
+            </div>
         </div>
     `;
 
     footer.innerHTML = `
         <div class="folder-secondary-actions">
-            <button type="button" class="folder-delete">
-                Delete folder
-            </button>
             <button type="button" class="folder-cancel">
                 ${savedSongs.length ? "Back to folder" : "Cancel"}
             </button>
@@ -3407,12 +3429,6 @@ function renderFolderPickerView(folder) {
             }
         );
 
-    $(".folder-delete", modal)
-        ?.addEventListener(
-            "click",
-            () => deleteFolder(folder)
-        );
-
     $(".folder-cancel", modal)
         .addEventListener(
             "click",
@@ -3431,12 +3447,17 @@ function renderFolderPickerView(folder) {
             () => saveFolderAdditions(folder)
         );
 
+    // Folder options live inside the open folder interface for both
+    // brand-new and pre-existing folders.
+    bindFolderSavedHeaderMenu(modal, folder);
     updateFolderSelectionUI();
 }
 
 function renderFolderSavedView(folder) {
     const modal =
         createFolderModal();
+
+    modal.dataset.folderId = String(folder.id);
 
     const songs =
         getFolderSongs(folder.id);
@@ -3450,6 +3471,8 @@ function renderFolderSavedView(folder) {
     const footer =
         $(".folder-modal-footer", modal);
 
+    footer.classList.remove("folder-picker-footer");
+
     setFolderHeader(
         folder,
         songs.length,
@@ -3462,10 +3485,26 @@ function renderFolderSavedView(folder) {
             <strong>${songs.length} ${songs.length === 1 ? "song" : "songs"}</strong>
         </div>
 
-        <div class="folder-saved-actions">
+        <div class="folder-saved-actions folder-saved-actions-enhanced">
             <button type="button" class="folder-add-more">
                 <span>＋</span> Add songs
             </button>
+            <div class="folder-header-menu-wrap">
+                <button
+                    type="button"
+                    class="folder-header-menu-button"
+                    aria-label="Folder options"
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                    title="Folder options"
+                >
+                    <span aria-hidden="true">⋯</span>
+                </button>
+                <div class="folder-header-menu" role="menu" hidden>
+                    <button type="button" data-folder-header-action="edit" role="menuitem">Edit folder</button>
+                    <button type="button" data-folder-header-action="delete" role="menuitem">Delete folder</button>
+                </div>
+            </div>
         </div>
     `;
 
@@ -3569,8 +3608,9 @@ function renderFolderSavedView(folder) {
                     `Remove ${name} from ${folder.title}`
                 );
 
-                remove.innerHTML =
-                    `<span></span><span></span>`;
+                // Keep the removal glyph as a single character so no second
+                // span/pseudo-line can overlap it on narrow screens.
+                remove.textContent = "×";
 
                 row.append(
                     number,
@@ -3618,24 +3658,37 @@ function renderFolderSavedView(folder) {
     }
 
     footer.innerHTML = `
-        <div class="folder-secondary-actions">
-            <button type="button" class="folder-delete">
-                Delete folder
-            </button>
-            <button type="button" class="folder-cancel">
-                Close
-            </button>
+        <div class="folder-mini-player" aria-label="Folder player">
+            <div class="folder-mini-controls">
+                <button type="button" class="folder-mini-prev" aria-label="Previous song">‹</button>
+                <button type="button" class="folder-mini-toggle" aria-label="Play folder">▶</button>
+                <button type="button" class="folder-mini-next" aria-label="Next song">›</button>
+            </div>
+            <div class="folder-mini-progress-wrap">
+                <div class="folder-mini-progress" role="slider" tabindex="0" aria-label="Folder song progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <span class="folder-mini-progress-fill"></span>
+                    <span class="folder-mini-progress-thumb"></span>
+                </div>
+            </div>
         </div>
 
-        <div class="folder-primary-actions">
-            <button
-                type="button"
-                class="folder-play-folder"
-                ${songs.length ? "" : "disabled"}
-            >
-                Play folder
-                <span>▶</span>
-            </button>
+        <div class="folder-modal-actions-row">
+            <div class="folder-secondary-actions">
+                <button type="button" class="folder-cancel">
+                    Close
+                </button>
+            </div>
+
+            <div class="folder-primary-actions">
+                <button
+                    type="button"
+                    class="folder-play-folder"
+                    ${songs.length ? "" : "disabled"}
+                >
+                    Play folder
+                    <span>▶</span>
+                </button>
+            </div>
         </div>
     `;
 
@@ -3643,12 +3696,6 @@ function renderFolderSavedView(folder) {
         .addEventListener(
             "click",
             () => renderFolderPickerView(folder)
-        );
-
-    $(".folder-delete", modal)
-        ?.addEventListener(
-            "click",
-            () => deleteFolder(folder)
         );
 
     $(".folder-cancel", modal)
@@ -3662,14 +3709,160 @@ function renderFolderSavedView(folder) {
             "click",
             () => {
                 if (songs.length) {
-                    startFolderPlayback(
-                        folder.id,
-                        songs,
-                        0
-                    );
+                    startFolderPlayback(folder.id, songs, 0);
                 }
             }
         );
+
+    window.bindFolderMiniPlayer?.(modal, folder, songs);
+    bindFolderSavedHeaderMenu(modal, folder);
+    updateFolderPlaybackUI();
+}
+
+function bindFolderSavedHeaderMenu(modal, folder) {
+    if (!modal) {
+        return;
+    }
+
+    // Bind exactly once to the modal itself. The toolbar/menu is re-rendered
+    // whenever we switch between Saved Songs and Song Selection, so binding to
+    // the individual menu nodes makes handlers fragile. Delegation keeps the
+    // menu working after every re-render.
+    if (modal.dataset.folderHeaderMenuBound === "true") {
+        return;
+    }
+
+    modal.dataset.folderHeaderMenuBound = "true";
+
+    const getCurrentFolder = () => {
+        const id = String(
+            modal.dataset.folderId ||
+            activeFolderId ||
+            folder?.id ||
+            ""
+        );
+
+        if (!id || INVALID_FOLDER_IDS.includes(id)) {
+            return null;
+        }
+
+        const storedRecord =
+            folders[id] && typeof folders[id] === "object"
+                ? folders[id]
+                : {};
+        const storedCustom =
+            customFolders[id] && typeof customFolders[id] === "object"
+                ? customFolders[id]
+                : {};
+        const card = $$(".folder-card[data-folder-id]")
+            .find(item => String(item.dataset.folderId || "") === id);
+        const cardFolder = card ? getFolderCardData(card) : {};
+
+        return {
+            ...cardFolder,
+            ...folder,
+            ...storedRecord,
+            ...storedCustom,
+            id,
+            custom:
+                storedCustom.custom === true ||
+                storedRecord.custom === true ||
+                folder?.custom === true ||
+                cardFolder.custom === true
+        };
+    };
+
+    const closeMenu = () => {
+        const button = $(".folder-header-menu-button", modal);
+        const menu = $(".folder-header-menu", modal);
+        const wrap = $(".folder-header-menu-wrap", modal);
+
+        if (menu) {
+            menu.hidden = true;
+        }
+        if (button) {
+            button.setAttribute("aria-expanded", "false");
+        }
+        wrap?.classList.remove("is-open");
+    };
+
+    modal.addEventListener("click", event => {
+        const target = event.target instanceof Element
+            ? event.target
+            : null;
+        if (!target) return;
+
+        const menuButton = target.closest(".folder-header-menu-button");
+        if (menuButton && modal.contains(menuButton)) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const menu = $(".folder-header-menu", modal);
+            const wrap = $(".folder-header-menu-wrap", modal);
+            if (!menu || !wrap) return;
+
+            const shouldOpen = menu.hidden;
+            menu.hidden = !shouldOpen;
+            menuButton.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+            wrap.classList.toggle("is-open", shouldOpen);
+            return;
+        }
+
+        const actionButton = target.closest("[data-folder-header-action]");
+        if (!actionButton || !modal.contains(actionButton)) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const action = actionButton.dataset.folderHeaderAction;
+        const currentFolder = getCurrentFolder();
+        closeMenu();
+
+        if (!currentFolder) {
+            showLocalMusicToast("That folder is no longer available");
+            return;
+        }
+
+        if (action === "edit") {
+            if (typeof window.openEditFolderModal === "function") {
+                window.openEditFolderModal(currentFolder);
+            } else {
+                // The edit module normally exists before a user can click the
+                // menu. Keep a tiny deferred handoff as a safety net anyway.
+                window.__spootitifyPendingEditFolder = currentFolder;
+            }
+        } else if (action === "delete") {
+            // Call the canonical function directly; no fragile global proxy is
+            // required and existing folders use the same path as custom ones.
+            deleteFolder(currentFolder);
+        }
+    });
+
+    modal.addEventListener("keydown", event => {
+        if (event.key !== "Escape") {
+            return;
+        }
+
+        const menu = $(".folder-header-menu", modal);
+        const button = $(".folder-header-menu-button", modal);
+        if (menu && !menu.hidden) {
+            event.preventDefault();
+            closeMenu();
+            button?.focus();
+        }
+    });
+
+    document.addEventListener("pointerdown", event => {
+        const menu = $(".folder-header-menu", modal);
+        const wrap = $(".folder-header-menu-wrap", modal);
+        if (!menu || !wrap || menu.hidden) return;
+        const target = event.target instanceof Node ? event.target : null;
+        if (target && !wrap.contains(target)) {
+            closeMenu();
+        }
+    });
 }
 
 function saveFolderAdditions(folder) {
@@ -3741,6 +3934,13 @@ function removeSongFromFolder(folder, song) {
     const identity =
         getFolderSongIdentity(song);
 
+    const wasPlayingRemovedSong =
+        activeFolderId === folder.id &&
+        getFolderSongIdentity(currentSong.src) === identity;
+
+    const oldQueueIndex =
+        folderQueueIndex;
+
     record.songs =
         record.songs.filter(savedSong =>
             getFolderSongIdentity(savedSong) !== identity
@@ -3749,24 +3949,60 @@ function removeSongFromFolder(folder, song) {
     saveFolders();
     updateFolderCardCounts();
 
-    const currentFolderSong =
-        folderQueue.includes(song);
-
-    if (currentFolderSong) {
-        folderQueue =
+    if (activeFolderId === folder.id && folderQueue.length) {
+        const updatedQueue =
             getFolderSongs(folder.id);
+
+        folderQueue =
+            updatedQueue;
 
         if (!folderQueue.length) {
             folderQueueIndex = -1;
             activeFolderId = null;
             currentSong.pause();
-        } else {
-            folderQueueIndex =
-                Math.min(
-                    folderQueueIndex,
-                    folderQueue.length - 1
+            currentSong.removeAttribute("src");
+            currentSong.load();
+            updateProgress(0);
+            updateSongTime();
+            updatePlayerVisuals();
+        } else if (wasPlayingRemovedSong) {
+            // Continue naturally with the next remaining song. If the removed
+            // song was the last one, fall back to the new final track.
+            const nextIndex =
+                Math.max(
+                    0,
+                    Math.min(
+                        oldQueueIndex,
+                        folderQueue.length - 1
+                    )
                 );
+
+            folderQueueIndex = nextIndex;
+
+            playMusic(
+                folderQueue[folderQueueIndex],
+                getSongName(folderQueue[folderQueueIndex]),
+                true,
+                "folder"
+            );
+        } else {
+            // The currently playing song remains the anchor.
+            const currentIndexInQueue =
+                folderQueue.indexOf(currentSong.src);
+
+            folderQueueIndex =
+                currentIndexInQueue >= 0
+                    ? currentIndexInQueue
+                    : Math.max(
+                        0,
+                        Math.min(
+                            oldQueueIndex,
+                            folderQueue.length - 1
+                        )
+                    );
         }
+
+        window.updateFolderPlaybackUI?.();
     }
 
     if (folderModal && activeFolderId === folder.id) {
@@ -3869,6 +4105,8 @@ function openFolderModal(folder) {
     activeFolderId =
         folder.id;
 
+    modal.dataset.folderId = String(folder.id);
+
     ensureFolderRecord(folder);
 
     if (getFolderSongs(folder.id).length) {
@@ -3923,6 +4161,8 @@ const DEFAULT_FOLDER_ART =
 let newFolderModal = null;
 let createFolderImageData = "";
 let createFolderImageName = "";
+let createFolderImageSource = "";
+let createFolderCrop = { zoom: 1, x: 0, y: 0 };
 
 function getCustomFolders() {
     return Object.entries(customFolders)
@@ -3991,6 +4231,11 @@ function bindFolderCard(card) {
         return;
     }
 
+    // Folder options intentionally live only inside the opened Saved Songs view.
+    // Strip any legacy/card-level menu that may still exist in older markup.
+    card.querySelector(".folder-card-menu")?.remove();
+    card.querySelector(".folder-card-menu-popover")?.remove();
+
     if (!card.dataset.folderId) {
         card.dataset.folderId =
             `folder-${$$(".card").indexOf(card) + 1}`;
@@ -4038,6 +4283,10 @@ function bindFolderCard(card) {
 
     const playButton =
         $(".play", card);
+
+    // Folder-card menu behavior is bound by the final folder UX pass below.
+    // Keeping it in one place prevents duplicate click handlers from toggling
+    // the menu closed immediately after opening.
 
     const open = event => {
         event.preventDefault();
@@ -4319,6 +4568,30 @@ function createCreateFolderModal() {
                             <span class="create-folder-upload-hint">PNG, JPG, WEBP • up to 8 MB</span>
                             <span class="create-folder-upload-name"></span>
                         </label>
+
+                        <div class="create-folder-crop-panel" hidden>
+                            <div class="create-folder-crop-head">
+                                <span>ADJUST ARTWORK</span>
+                                <strong class="create-folder-crop-value">100%</strong>
+                            </div>
+                            <p>Zoom and reposition the image so the important part fits the square artwork.</p>
+                            <label>
+                                Zoom
+                                <input class="create-folder-crop-zoom" type="range" min="1" max="2.5" step="0.01" value="1">
+                            </label>
+                            <label>
+                                Horizontal
+                                <input class="create-folder-crop-x" type="range" min="-1" max="1" step="0.01" value="0">
+                            </label>
+                            <label>
+                                Vertical
+                                <input class="create-folder-crop-y" type="range" min="-1" max="1" step="0.01" value="0">
+                            </label>
+                            <div class="create-folder-crop-actions">
+                                <button type="button" class="create-folder-reset-crop">Reset</button>
+                                <button type="button" class="create-folder-apply-crop">Apply crop</button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="create-folder-fields">
@@ -4530,6 +4803,12 @@ function openCreateFolderModal() {
     createFolderImageName =
         "";
 
+    createFolderImageSource =
+        "";
+
+    createFolderCrop =
+        { zoom: 1, x: 0, y: 0 };
+
     const nameCount =
         $(".create-folder-name-count", modal);
 
@@ -4556,6 +4835,7 @@ function openCreateFolderModal() {
 
     showCreateFolderError("");
     updateCreateFolderImageState();
+    window.refreshCreateFolderCropUI?.();
 
     modal.classList.add(
         "open"
@@ -4746,10 +5026,20 @@ async function handleCreateFolderImage(file) {
         createFolderImageData =
             await compressFolderImage(file);
 
+        createFolderImageSource =
+            createFolderImageData;
+
+        createFolderCrop =
+            { zoom: 1, x: 0, y: 0 };
+
         createFolderImageName =
             file.name;
 
         updateCreateFolderImageState();
+
+        window.requestAnimationFrame(() => {
+            window.refreshCreateFolderCropUI?.();
+        });
     } catch (error) {
         createFolderImageData =
             "";
@@ -4857,7 +5147,10 @@ function deleteFolder(folder) {
     updateFolderCardCounts();
 }
 
-function createNewFolder() {
+// Used by the UI-level folder options menu without changing the existing folder logic.
+window.__spootitifyDeleteFolder = deleteFolder;
+
+async function createNewFolder() {
     if (!newFolderModal) {
         return;
     }
@@ -4897,13 +5190,29 @@ function createNewFolder() {
     const id =
         createNewFolderId();
 
+    let finalFolderImage =
+        createFolderImageData ||
+        DEFAULT_FOLDER_ART;
+
+    try {
+        if (typeof window.getCreateFolderFinalImage === "function") {
+            finalFolderImage =
+                await window.getCreateFolderFinalImage();
+        }
+    } catch (imageError) {
+        console.warn("Create-folder crop export failed:", imageError);
+        showCreateFolderError(
+            imageError?.message ||
+            "Could not prepare that artwork."
+        );
+        return;
+    }
+
     const folder = {
         custom: true,
         title: name,
         description,
-        image:
-            createFolderImageData ||
-            DEFAULT_FOLDER_ART,
+        image: finalFolderImage,
         songs: [],
         createdAt: Date.now()
     };
@@ -7325,4 +7634,770 @@ main().catch(
     } else {
         init();
     }
+})();
+
+/* ==========================================================
+   SMART FOLDER EXPERIENCE PATCH
+   - deterministic folder autoplay
+   - mini folder player with seek
+   - active-song/card/main-player synchronization
+   - custom-folder edit/delete menu
+   - image crop/position editor
+   ========================================================== */
+(function installSmartFolderExperience() {
+    let folderEditModal = null;
+    let folderEditImage = null;
+    let folderEditImageSource = "";
+    let folderEditCrop = { zoom: 1, x: 0, y: 0 };
+    let folderEditImageChanged = false;
+    let miniPlayerBound = false;
+
+    const q = (selector, parent = document) => parent.querySelector(selector);
+    const qa = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+
+    function updateFolderPlaybackUI() {
+        const playingSong = currentSong?.src || "";
+        const playing = Boolean(playingSong && !currentSong.paused);
+        const folderPlaying = Boolean(activeFolderId && folderQueue.length && playingSong);
+
+        qa(".folder-saved-song").forEach(row => {
+            const isActive = folderPlaying && row.dataset.song === playingSong;
+            row.classList.toggle("is-playing", isActive);
+            row.setAttribute("aria-current", isActive ? "true" : "false");
+        });
+
+        qa(".folder-mini-player").forEach(player => {
+            const inFolder = folderPlaying;
+            const toggle = q(".folder-mini-toggle", player);
+            const progress = q(".folder-mini-progress", player);
+            const fill = q(".folder-mini-progress-fill", player);
+            const thumb = q(".folder-mini-progress-thumb", player);
+            const percent = currentSong?.duration > 0
+                ? Math.max(0, Math.min(100, currentSong.currentTime / currentSong.duration * 100))
+                : 0;
+
+            player.classList.toggle("is-active", inFolder);
+            player.classList.toggle("is-playing", inFolder && playing);
+            if (toggle) {
+                toggle.textContent = inFolder && playing ? "Ⅱ" : "▶";
+                toggle.setAttribute("aria-label", inFolder && playing ? "Pause folder" : "Play folder");
+            }
+            if (progress) progress.setAttribute("aria-valuenow", String(Math.round(percent)));
+            if (fill) fill.style.width = percent + "%";
+            if (thumb) thumb.style.left = percent + "%";
+        });
+
+        qa(".folder-card[data-folder-id]").forEach(card => {
+            const isActive = String(card.dataset.folderId) === String(activeFolderId) && folderPlaying;
+            card.classList.toggle("folder-is-playing", isActive);
+        });
+    }
+
+    function bindFolderMiniPlayer(modal, folder, songs) {
+        const player = q(".folder-mini-player", modal);
+        if (!player || player.dataset.bound === "true") return;
+        player.dataset.bound = "true";
+
+        q(".folder-mini-toggle", player)?.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (activeFolderId !== folder.id || !folderQueue.length) {
+                startFolderPlayback(folder.id, songs, 0);
+                return;
+            }
+            if (currentSong.paused) currentSong.play().catch(() => {});
+            else currentSong.pause();
+        });
+
+        q(".folder-mini-prev", player)?.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (activeFolderId !== folder.id) startFolderPlayback(folder.id, songs, 0);
+            else previousSong();
+        });
+
+        q(".folder-mini-next", player)?.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (activeFolderId !== folder.id) startFolderPlayback(folder.id, songs, 0);
+            else nextSong();
+        });
+
+        const progress = q(".folder-mini-progress", player);
+        const seek = clientX => {
+            if (!currentSong.duration || activeFolderId !== folder.id) return;
+            const rect = progress.getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            currentSong.currentTime = ratio * currentSong.duration;
+            updateFolderPlaybackUI();
+        };
+
+        progress?.addEventListener("pointerdown", event => {
+            event.preventDefault();
+            progress.setPointerCapture?.(event.pointerId);
+            seek(event.clientX);
+        });
+        progress?.addEventListener("pointermove", event => {
+            if (event.buttons) seek(event.clientX);
+        });
+        progress?.addEventListener("keydown", event => {
+            if (!currentSong.duration || activeFolderId !== folder.id) return;
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            if (event.key === "Home") currentSong.currentTime = 0;
+            else if (event.key === "End") currentSong.currentTime = currentSong.duration;
+            else currentSong.currentTime = Math.max(0, Math.min(currentSong.duration, currentSong.currentTime + (event.key === "ArrowRight" ? 5 : -5)));
+            updateFolderPlaybackUI();
+        });
+    }
+
+    function makeFolderCropData(source, crop) {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => {
+                try {
+                    const size = 720;
+                    const coverScale = Math.max(size / image.naturalWidth, size / image.naturalHeight) * Math.max(1, crop.zoom);
+                    const drawW = image.naturalWidth * coverScale;
+                    const drawH = image.naturalHeight * coverScale;
+                    const extraX = Math.max(0, drawW - size);
+                    const extraY = Math.max(0, drawH - size);
+                    const dx = -extraX / 2 + crop.x * extraX / 2;
+                    const dy = -extraY / 2 + crop.y * extraY / 2;
+                    const canvas = document.createElement("canvas");
+                    canvas.width = size;
+                    canvas.height = size;
+                    const ctx = canvas.getContext("2d", { alpha: true });
+                    if (!ctx) throw new Error("Image editor is unavailable.");
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = "high";
+                    ctx.drawImage(image, dx, dy, drawW, drawH);
+                    resolve(canvas.toDataURL("image/webp", .86));
+                } catch (error) { reject(error); }
+            };
+            image.onerror = () => reject(new Error("That image could not be opened."));
+            image.src = source;
+        });
+    }
+
+    function readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(new Error("Could not read that image."));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function syncEditPreview() {
+        if (!folderEditModal || !folderEditImageSource) return;
+        const preview = q(".folder-edit-preview-image", folderEditModal);
+        const value = q(".folder-edit-crop-value", folderEditModal);
+        if (value) value.textContent = "" + Math.round(folderEditCrop.zoom * 100) + "%";
+        makeFolderCropData(folderEditImageSource, folderEditCrop)
+            .then(data => {
+                if (folderEditModal && preview) preview.src = data;
+            })
+            .catch(error => console.warn("Folder crop preview failed", error));
+    }
+
+    function updateEditSliderLabels() {
+        if (!folderEditModal) return;
+        const zoom = q(".folder-edit-zoom", folderEditModal);
+        const x = q(".folder-edit-x", folderEditModal);
+        const y = q(".folder-edit-y", folderEditModal);
+        if (zoom) zoom.value = String(folderEditCrop.zoom);
+        if (x) x.value = String(folderEditCrop.x);
+        if (y) y.value = String(folderEditCrop.y);
+        syncEditPreview();
+    }
+
+    function closeEditFolderModal() {
+        if (!folderEditModal) return;
+        folderEditModal.classList.remove("open");
+        folderEditModal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("folder-edit-modal-open");
+    }
+
+    function createEditFolderModal() {
+        if (folderEditModal) return folderEditModal;
+        folderEditModal = document.createElement("div");
+        folderEditModal.className = "folder-edit-modal-backdrop";
+        folderEditModal.setAttribute("aria-hidden", "true");
+        folderEditModal.innerHTML = `
+            <section class="folder-edit-modal" role="dialog" aria-modal="true" aria-labelledby="folderEditTitle">
+                <header class="folder-edit-header">
+                    <div><span>FOLDER SETTINGS</span><h2 id="folderEditTitle">Edit folder</h2><p>Update the identity of your collection without touching its songs.</p></div>
+                    <button type="button" class="folder-edit-close" aria-label="Close edit folder">×</button>
+                </header>
+                <form class="folder-edit-form">
+                    <div class="folder-edit-grid">
+                        <div class="folder-edit-art-column">
+                            <div class="folder-edit-preview"><img class="folder-edit-preview-image" alt="Folder artwork preview"></div>
+                            <label class="folder-edit-upload">
+                                <input type="file" class="folder-edit-image-input" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
+                                <strong>Change artwork</strong><small>Choose an image, then fine-tune its crop below.</small>
+                            </label>
+                            <div class="folder-edit-crop-controls">
+                                <div class="folder-edit-crop-head"><span>Artwork fit</span><strong class="folder-edit-crop-value">100%</strong></div>
+                                <label>Zoom<input class="folder-edit-zoom" type="range" min="1" max="2.5" step="0.01" value="1"></label>
+                                <label>Horizontal<input class="folder-edit-x" type="range" min="-1" max="1" step="0.01" value="0"></label>
+                                <label>Vertical<input class="folder-edit-y" type="range" min="-1" max="1" step="0.01" value="0"></label>
+                                <button type="button" class="folder-edit-reset-crop">Reset crop</button>
+                            </div>
+                        </div>
+                        <div class="folder-edit-fields">
+                            <label><span>Name</span><input class="folder-edit-name" maxlength="40" required></label>
+                            <label><span>Description</span><textarea class="folder-edit-description" maxlength="120" rows="6"></textarea></label>
+                            <p class="folder-edit-error" role="alert"></p>
+                        </div>
+                    </div>
+                    <footer class="folder-edit-footer">
+                        <button type="button" class="folder-edit-cancel">Cancel</button>
+                        <button type="submit" class="folder-edit-save">Save changes</button>
+                    </footer>
+                </form>
+            </section>`;
+        document.body.appendChild(folderEditModal);
+
+        q(".folder-edit-close", folderEditModal).addEventListener("click", closeEditFolderModal);
+        q(".folder-edit-cancel", folderEditModal).addEventListener("click", closeEditFolderModal);
+        folderEditModal.addEventListener("click", event => {
+            if (event.target === folderEditModal) closeEditFolderModal();
+        });
+        [".folder-edit-zoom", ".folder-edit-x", ".folder-edit-y"].forEach(selector => {
+            q(selector, folderEditModal).addEventListener("input", event => {
+                const value = Number(event.target.value);
+                if (selector.endsWith("zoom")) folderEditCrop.zoom = value;
+                if (selector.endsWith("-x")) folderEditCrop.x = value;
+                if (selector.endsWith("-y")) folderEditCrop.y = value;
+                syncEditPreview();
+            });
+        });
+        q(".folder-edit-reset-crop", folderEditModal).addEventListener("click", () => {
+            folderEditCrop = { zoom: 1, x: 0, y: 0 };
+            updateEditSliderLabels();
+        });
+        q(".folder-edit-image-input", folderEditModal).addEventListener("change", async event => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            try {
+                if (file.size > 8 * 1024 * 1024) throw new Error("That image is larger than 8 MB.");
+                folderEditImageSource = await readFileAsDataURL(file);
+                folderEditCrop = { zoom: 1, x: 0, y: 0 };
+                folderEditImageChanged = true;
+                updateEditSliderLabels();
+            } catch (error) {
+                q(".folder-edit-error", folderEditModal).textContent = error.message || "Could not use that image.";
+            }
+        });
+        q(".folder-edit-form", folderEditModal).addEventListener("submit", async event => {
+            event.preventDefault();
+            const id = String(folderEditModal.dataset.folderId || "");
+
+            // Resolve from the live open-folder object first, then overlay
+            // persisted records. This is important for older/existing folders
+            // whose title/description/artwork lived in the original card rather
+            // than customFolders.
+            const seedFolder =
+                folderEditModal.__folderSeed && typeof folderEditModal.__folderSeed === "object"
+                    ? folderEditModal.__folderSeed
+                    : {};
+            const card = qa(".folder-card[data-folder-id]")
+                .find(item => String(item.dataset.folderId || "") === id);
+            const storedRecord =
+                folders[id] && typeof folders[id] === "object"
+                    ? folders[id]
+                    : {};
+            const storedCustom =
+                customFolders[id] && typeof customFolders[id] === "object"
+                    ? customFolders[id]
+                    : {};
+            const cardFolder = card ? getFolderCardData(card) : {};
+            const folder = {
+                ...cardFolder,
+                ...seedFolder,
+                ...storedRecord,
+                ...storedCustom,
+                id
+            };
+
+            if (!id || (!Object.keys(storedRecord).length && !Object.keys(storedCustom).length)) {
+                q(".folder-edit-error", folderEditModal).textContent = "That folder is no longer available.";
+                return;
+            }
+
+            const name = q(".folder-edit-name", folderEditModal).value.trim();
+            const description = q(".folder-edit-description", folderEditModal).value.trim() || "Your personal collection of songs.";
+            const error = q(".folder-edit-error", folderEditModal);
+            if (!name) { error.textContent = "Give your folder a name first."; return; }
+            try {
+                const image =
+                    folderEditImageChanged
+                        ? await makeFolderCropData(
+                            folderEditImageSource ||
+                            folder.image ||
+                            DEFAULT_FOLDER_ART,
+                            folderEditCrop
+                        )
+                        : (folder.image || DEFAULT_FOLDER_ART);
+
+                const existingRecord = { ...(folders[id] || {}) };
+                const wasCustom =
+                    existingRecord.custom === true ||
+                    Object.prototype.hasOwnProperty.call(customFolders, id) ||
+                    folder.custom === true;
+
+                const preservedSongs = Array.isArray(existingRecord.songs)
+                    ? [...existingRecord.songs]
+                    : [];
+
+                folders[id] = {
+                    ...existingRecord,
+                    songs: preservedSongs,
+                    title: name,
+                    description,
+                    image,
+                    custom: wasCustom
+                };
+
+                if (wasCustom) {
+                    customFolders[id] = {
+                        ...(customFolders[id] || {}),
+                        custom: true,
+                        title: name,
+                        description,
+                        image,
+                        createdAt: Number(
+                            customFolders[id]?.createdAt ||
+                            existingRecord.createdAt ||
+                            folder.createdAt ||
+                            Date.now()
+                        )
+                    };
+                }
+
+                saveFolders();
+                if (wasCustom) {
+                    saveCustomFolders();
+                }
+
+                const oldCard = qa(".folder-card[data-folder-id]").find(card => card.dataset.folderId === id);
+                if (oldCard) {
+                    if (wasCustom) {
+                        const fresh = createFolderCard({ id, ...customFolders[id] });
+                        oldCard.replaceWith(fresh);
+                        bindFolderCard(fresh);
+                    } else {
+                        oldCard.dataset.folderName = name;
+                        oldCard.dataset.folderDescription = description;
+                        const cardTitle = $("h3", oldCard);
+                        const cardDescription = $("p", oldCard);
+                        const cardImage = $("img", oldCard);
+                        if (cardTitle) cardTitle.textContent = name;
+                        if (cardDescription) cardDescription.textContent = description;
+                        if (cardImage) {
+                            cardImage.src = image;
+                            cardImage.alt = `${name} artwork`;
+                        }
+                    }
+                    updateFolderCardCounts();
+                }
+
+                if (folderModal && activeFolderId === id) {
+                    renderFolderSavedView({
+                        id,
+                        ...folders[id],
+                        ...(wasCustom ? customFolders[id] : {}),
+                        custom: wasCustom
+                    });
+                }
+
+                closeEditFolderModal();
+                showLocalMusicToast("Folder updated");
+            } catch (editError) {
+                console.error(editError);
+                error.textContent = editError.message || "Could not save the folder.";
+            }
+        });
+        return folderEditModal;
+    }
+
+    function openEditFolderModal(folder) {
+        if (!folder?.id || INVALID_FOLDER_IDS.includes(String(folder.id))) return;
+
+        const id = String(folder.id);
+        const modal = createEditFolderModal();
+        const storedCustom =
+            customFolders[id] && typeof customFolders[id] === "object"
+                ? customFolders[id]
+                : null;
+        const storedFolder =
+            folders[id] && typeof folders[id] === "object"
+                ? folders[id]
+                : null;
+        const saved = {
+            ...folder,
+            ...(storedFolder || {}),
+            ...(storedCustom || {}),
+            id
+        };
+        modal.dataset.folderId = String(folder.id);
+        // Keep the complete folder object with the edit dialog so existing
+        // folders can be edited even when their metadata is not in customFolders.
+        modal.__folderSeed = { ...saved };
+        q(".folder-edit-name", modal).value = saved.title || "My Folder";
+        q(".folder-edit-description", modal).value = saved.description || "Your personal collection of songs.";
+        q(".folder-edit-error", modal).textContent = "";
+        folderEditImageSource = saved.image || DEFAULT_FOLDER_ART;
+        folderEditCrop = { zoom: 1, x: 0, y: 0 };
+        folderEditImageChanged = false;
+        updateEditSliderLabels();
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("folder-edit-modal-open");
+        requestAnimationFrame(() => q(".folder-edit-name", modal)?.focus());
+    }
+
+    // Expose the edit function to the folder-card handlers installed above.
+    window.openEditFolderModal = openEditFolderModal;
+    window.updateFolderPlaybackUI = updateFolderPlaybackUI;
+    window.bindFolderMiniPlayer = bindFolderMiniPlayer;
+
+    if (window.__spootitifyPendingEditFolder) {
+        const pendingFolder = window.__spootitifyPendingEditFolder;
+        delete window.__spootitifyPendingEditFolder;
+        window.setTimeout(() => openEditFolderModal(pendingFolder), 0);
+    }
+
+    if (!miniPlayerBound) {
+        miniPlayerBound = true;
+        ["play", "pause", "timeupdate", "loadedmetadata", "durationchange", "ended", "emptied"].forEach(type => {
+            currentSong.addEventListener(type, updateFolderPlaybackUI);
+        });
+        document.addEventListener("keydown", event => {
+            if (event.key === "Escape" && folderEditModal?.classList.contains("open")) closeEditFolderModal();
+        });
+    }
+})();
+
+
+/* ==========================================================
+   FINAL FOLDER UX PASS
+   - folder options live only inside Saved Songs
+   - create-folder artwork crop editor
+   - reliable remove-from-folder controls
+   - footer-integrated mini player
+   - stronger mobile/touch behavior
+   ========================================================== */
+(function installFinalFolderUXPass() {
+    const q = (selector, parent = document) => parent.querySelector(selector);
+    const qa = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function cropDataURL(source, crop) {
+        return new Promise((resolve, reject) => {
+            if (!source) {
+                reject(new Error("Choose an image first."));
+                return;
+            }
+
+            const image = new Image();
+
+            image.onload = () => {
+                try {
+                    const size = 720;
+                    const coverScale =
+                        Math.max(
+                            size / image.naturalWidth,
+                            size / image.naturalHeight
+                        ) * Math.max(1, Number(crop.zoom) || 1);
+
+                    const drawWidth = image.naturalWidth * coverScale;
+                    const drawHeight = image.naturalHeight * coverScale;
+                    const extraX = Math.max(0, drawWidth - size);
+                    const extraY = Math.max(0, drawHeight - size);
+
+                    const x = clamp(Number(crop.x) || 0, -1, 1);
+                    const y = clamp(Number(crop.y) || 0, -1, 1);
+
+                    const dx = -extraX / 2 + (x * extraX / 2);
+                    const dy = -extraY / 2 + (y * extraY / 2);
+
+                    const canvas = document.createElement("canvas");
+                    canvas.width = size;
+                    canvas.height = size;
+
+                    const ctx = canvas.getContext("2d", { alpha: true });
+                    if (!ctx) throw new Error("Image editor is unavailable.");
+
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = "high";
+                    ctx.drawImage(
+                        image,
+                        dx,
+                        dy,
+                        drawWidth,
+                        drawHeight
+                    );
+
+                    const webp = canvas.toDataURL("image/webp", 0.86);
+                    const fallback =
+                        webp && webp !== "data:," && webp.length > 20
+                            ? webp
+                            : canvas.toDataURL("image/jpeg", 0.86);
+
+                    resolve(fallback);
+                } catch (error) {
+                    reject(error);
+                }
+            };
+
+            image.onerror = () =>
+                reject(new Error("That image could not be opened."));
+
+            image.src = source;
+        });
+    }
+
+    async function refreshCreateFolderCropUI() {
+        const modal = q(".create-folder-modal-backdrop");
+        if (!modal) return;
+
+        const panel = q(".create-folder-crop-panel", modal);
+        const preview = q(".create-folder-preview-image", modal);
+        const value = q(".create-folder-crop-value", modal);
+
+        const hasImage = Boolean(createFolderImageSource || createFolderImageData);
+
+        if (panel) {
+            panel.hidden = !hasImage;
+        }
+
+        const source =
+            createFolderImageSource ||
+            createFolderImageData ||
+            DEFAULT_FOLDER_ART;
+
+        if (!hasImage || !preview) {
+            if (preview) preview.src = DEFAULT_FOLDER_ART;
+            return;
+        }
+
+        if (value) {
+            value.textContent =
+                `${Math.round((Number(createFolderCrop.zoom) || 1) * 100)}%`;
+        }
+
+        try {
+            const data = await cropDataURL(source, createFolderCrop);
+            if (q(".create-folder-preview-image", modal) === preview) {
+                preview.src = data;
+            }
+        } catch (error) {
+            console.warn("Create-folder crop preview failed:", error);
+        }
+
+        const zoom = q(".create-folder-crop-zoom", modal);
+        const x = q(".create-folder-crop-x", modal);
+        const y = q(".create-folder-crop-y", modal);
+
+        if (zoom) zoom.value = String(createFolderCrop.zoom);
+        if (x) x.value = String(createFolderCrop.x);
+        if (y) y.value = String(createFolderCrop.y);
+    }
+
+    function syncCreateCropInputs(modal) {
+        if (!modal) return;
+
+        const zoom = q(".create-folder-crop-zoom", modal);
+        const x = q(".create-folder-crop-x", modal);
+        const y = q(".create-folder-crop-y", modal);
+
+        if (zoom) zoom.value = String(createFolderCrop.zoom);
+        if (x) x.value = String(createFolderCrop.x);
+        if (y) y.value = String(createFolderCrop.y);
+
+        refreshCreateFolderCropUI();
+    }
+
+    window.getCreateFolderFinalImage = async function () {
+        const source =
+            createFolderImageSource ||
+            createFolderImageData;
+
+        if (!source) {
+            return DEFAULT_FOLDER_ART;
+        }
+
+        return cropDataURL(source, createFolderCrop);
+    };
+
+    function bindCreateFolderCrop() {
+        const modal = q(".create-folder-modal-backdrop");
+        if (!modal || modal.dataset.finalCropBound === "true") return;
+
+        const panel = q(".create-folder-crop-panel", modal);
+        if (!panel) return;
+
+        modal.dataset.finalCropBound = "true";
+
+        [".create-folder-crop-zoom", ".create-folder-crop-x", ".create-folder-crop-y"]
+            .forEach(selector => {
+                q(selector, panel)?.addEventListener("input", event => {
+                    const value = Number(event.target.value);
+
+                    if (selector.endsWith("zoom")) {
+                        createFolderCrop.zoom = clamp(value, 1, 2.5);
+                    } else if (selector.endsWith("-x")) {
+                        createFolderCrop.x = clamp(value, -1, 1);
+                    } else {
+                        createFolderCrop.y = clamp(value, -1, 1);
+                    }
+
+                    refreshCreateFolderCropUI();
+                });
+            });
+
+        q(".create-folder-reset-crop", panel)?.addEventListener("click", () => {
+            createFolderCrop = { zoom: 1, x: 0, y: 0 };
+            syncCreateCropInputs(modal);
+        });
+
+        q(".create-folder-apply-crop", panel)?.addEventListener("click", async event => {
+            event.preventDefault();
+
+            const source =
+                createFolderImageSource ||
+                createFolderImageData;
+
+            if (!source) return;
+
+            const button = event.currentTarget;
+            const previous = button.textContent;
+
+            try {
+                button.disabled = true;
+                button.textContent = "Applying…";
+
+                createFolderImageData =
+                    await cropDataURL(source, createFolderCrop);
+
+                createFolderImageSource =
+                    createFolderImageData;
+
+                updateCreateFolderImageState();
+                await refreshCreateFolderCropUI();
+            } catch (error) {
+                showCreateFolderError(
+                    error?.message ||
+                    "Could not crop that image."
+                );
+            } finally {
+                button.disabled = false;
+                button.textContent = previous;
+            }
+        });
+
+        // The original image input handler is registered by the main folder feature.
+        // Run after it so the compressed image is available as the crop source.
+        q(".create-folder-image-input", modal)?.addEventListener(
+            "change",
+            () => {
+                window.setTimeout(() => {
+                    createFolderImageSource =
+                        createFolderImageData || "";
+
+                    createFolderCrop =
+                        { zoom: 1, x: 0, y: 0 };
+
+                    syncCreateCropInputs(modal);
+                }, 0);
+            }
+        );
+    }
+
+    // Folder actions live only inside the opened Saved Songs interface.
+    // Never render or bind a three-dot menu on folder cards.
+    function wireFolderMenus() {
+        // There must never be a three-dot/options menu on a folder card.
+        // The only folder options UI is the menu beside Add songs inside
+        // the opened Saved Songs interface.
+        qa(".folder-card-menu, .folder-card-menu-popover, #spootitify-folder-menu-portal")
+            .forEach(node => node.remove());
+
+        qa(".folder-card[data-folder-id]").forEach(card => {
+            card.querySelector(".folder-card-menu")?.remove();
+            card.querySelector(".folder-card-menu-popover")?.remove();
+        });
+    }
+
+    function wireRemoveButtons() {
+        qa(".folder-saved-song .folder-remove").forEach(button => {
+            button.style.pointerEvents = "auto";
+            button.style.zIndex = "50";
+            button.setAttribute("type", "button");
+
+            if (button.dataset.finalRemoveBound === "true") return;
+            button.dataset.finalRemoveBound = "true";
+
+            button.addEventListener("pointerdown", event => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+        });
+    }
+
+
+    const run = () => {
+        try {
+            createCreateFolderModal();
+        } catch (error) {
+            console.warn("Could not initialize create-folder crop UI:", error);
+        }
+
+        bindCreateFolderCrop();
+        wireFolderMenus();
+        wireRemoveButtons();
+        window.refreshCreateFolderCropUI = refreshCreateFolderCropUI;
+        window.bindFinalFolderUX = () => {
+            bindCreateFolderCrop();
+            wireFolderMenus();
+            wireRemoveButtons();
+            refreshCreateFolderCropUI();
+        };
+
+        window.setTimeout(() => {
+            bindCreateFolderCrop();
+            wireFolderMenus();
+            wireRemoveButtons();
+        }, 80);
+    };
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", run, { once: true });
+    } else {
+        run();
+    }
+
+    // Rerenders (opening folders, removing songs, editing folders) replace rows/cards.
+    // A lightweight mutation observer keeps the interactive affordances attached.
+    const observer = new MutationObserver(() => {
+        if (observer._queued) return;
+        observer._queued = true;
+
+        requestAnimationFrame(() => {
+            observer._queued = false;
+            wireFolderMenus();
+            wireRemoveButtons();
+        });
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 })();

@@ -6866,3 +6866,675 @@ body {
         transition: none !important;
     }
 }
+
+/* ==========================================================
+   SMART FOLDER EXPERIENCE PATCH
+   ========================================================== */
+.folder-card-menu {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 12;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 50%;
+    background: rgba(8,10,9,.54);
+    color: rgba(255,255,255,.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(-4px) scale(.92);
+    transition: opacity .24s ease, transform .24s cubic-bezier(.22,1,.36,1), background .24s ease, border-color .24s ease;
+}
+.custom-folder-card:hover .folder-card-menu,
+.custom-folder-card:focus-within .folder-card-menu,
+.folder-card-menu[aria-expanded="true"] { opacity: 1; transform: translateY(0) scale(1); }
+.folder-card-menu:hover { background: rgba(18,22,19,.88); border-color: rgba(75,218,109,.30); color: #fff; }
+.folder-card-menu-popover {
+    position: absolute;
+    top: 48px;
+    right: 10px;
+    z-index: 30;
+    min-width: 150px;
+    padding: 6px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px;
+    background: rgba(16,19,17,.96);
+    box-shadow: 0 18px 38px rgba(0,0,0,.48), 0 0 20px rgba(75,218,109,.06);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    animation: folderMenuIn .20s cubic-bezier(.22,1,.36,1) both;
+}
+.folder-card-menu-popover[hidden] { display: none; }
+.folder-card-menu-popover button {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(255,255,255,.72);
+    text-align: left;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.folder-card-menu-popover button:hover { background: rgba(255,255,255,.07); color: #fff; }
+.folder-card-menu-popover button[data-folder-action="delete"] { color: rgba(255,145,145,.78); }
+.folder-card-menu-popover button[data-folder-action="delete"]:hover { background: rgba(255,80,80,.08); color: #ffd0d0; }
+@keyframes folderMenuIn { from { opacity: 0; transform: translateY(-5px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+.folder-is-playing { border-color: rgba(75,218,109,.58) !important; box-shadow: 0 12px 30px rgba(0,0,0,.48), 0 0 28px rgba(75,218,109,.10) !important; }
+.folder-is-playing::after { opacity: 1 !important; }
+.folder-is-playing .play { opacity: 1 !important; transform: translateY(0) scale(1) !important; }
+
+.folder-mini-player {
+    min-width: min(260px, 42vw);
+    flex: 1 1 260px;
+    display: grid;
+    grid-template-columns: auto minmax(70px, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 46px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 14px;
+    background: rgba(255,255,255,.025);
+    transition: border-color .25s ease, background .25s ease, box-shadow .25s ease;
+}
+.folder-mini-player.is-active { border-color: rgba(75,218,109,.22); background: rgba(75,218,109,.045); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.folder-mini-controls { display: flex; align-items: center; gap: 5px; }
+.folder-mini-controls button {
+    width: 28px; height: 28px; display: grid; place-items: center;
+    border: 1px solid rgba(255,255,255,.08); border-radius: 50%;
+    background: rgba(255,255,255,.035); color: rgba(255,255,255,.72);
+    cursor: pointer; font: inherit; line-height: 1;
+    transition: transform .20s ease, background .20s ease, border-color .20s ease, color .20s ease;
+}
+.folder-mini-controls button:hover { transform: translateY(-1px) scale(1.05); border-color: rgba(75,218,109,.28); background: rgba(75,218,109,.08); color: #fff; }
+.folder-mini-controls .folder-mini-toggle { width: 32px; height: 32px; background: linear-gradient(135deg, rgb(75,218,109), rgb(103,235,132)); color: #07130b; border-color: rgba(75,218,109,.45); font-size: 10px; font-weight: 900; }
+.folder-mini-progress { position: relative; height: 6px; border-radius: 999px; background: rgba(255,255,255,.11); cursor: pointer; touch-action: none; }
+.folder-mini-progress-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: linear-gradient(90deg, rgb(75,218,109), rgb(103,235,132)); pointer-events: none; }
+.folder-mini-progress-thumb { position: absolute; top: 50%; left: 0; width: 11px; height: 11px; border-radius: 50%; background: #fff; transform: translate(-50%,-50%) scale(.72); opacity: .45; box-shadow: 0 2px 7px rgba(0,0,0,.35); transition: transform .15s ease, opacity .15s ease; pointer-events: none; }
+.folder-mini-progress:hover .folder-mini-progress-thumb, .folder-mini-player.is-active .folder-mini-progress-thumb { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+
+.folder-saved-song.is-playing {
+    border-color: rgba(75,218,109,.66) !important;
+    background: linear-gradient(135deg, rgba(38,62,44,.95), rgba(23,31,25,.96)) !important;
+    box-shadow: 0 8px 25px rgba(0,0,0,.35), 0 0 22px rgba(75,218,109,.08) !important;
+}
+.folder-saved-song.is-playing .folder-song-number,
+.folder-saved-song.is-playing .folder-song-icon { color: rgb(75,218,109); }
+.folder-saved-song.is-playing .folder-song-play-hint { color: rgba(75,218,109,.92); }
+.folder-saved-song.is-playing::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 999px; background: rgb(75,218,109); box-shadow: 0 0 12px rgba(75,218,109,.55); }
+
+.folder-edit-modal-open { overflow: hidden; }
+.folder-edit-modal-backdrop {
+    position: fixed; inset: 0; z-index: 100700; display: flex; align-items: center; justify-content: center; padding: 18px;
+    background: rgba(3,5,4,.76); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .25s ease, visibility .25s ease;
+}
+.folder-edit-modal-backdrop.open { opacity: 1; visibility: visible; pointer-events: auto; }
+.folder-edit-modal {
+    width: min(820px, 100%); max-height: min(900px, calc(100dvh - 36px)); overflow: hidden; display: flex; flex-direction: column;
+    border: 1px solid rgba(255,255,255,.10); border-radius: 25px; background: linear-gradient(145deg, rgba(29,35,30,.99), rgba(10,13,11,.99));
+    box-shadow: 0 35px 100px rgba(0,0,0,.68), 0 0 55px rgba(75,218,109,.07); transform: translateY(18px) scale(.97); opacity: 0; transition: transform .40s cubic-bezier(.16,1,.3,1), opacity .25s ease;
+}
+.folder-edit-modal-backdrop.open .folder-edit-modal { transform: none; opacity: 1; }
+.folder-edit-header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; padding:22px 24px 18px; border-bottom:1px solid rgba(255,255,255,.07); }
+.folder-edit-header span { color: rgba(75,218,109,.74); font-size:8px; font-weight:800; letter-spacing:.18em; }
+.folder-edit-header h2 { margin-top:7px; color:#fff; font-size:clamp(21px,3vw,30px); letter-spacing:-.035em; }
+.folder-edit-header p { margin-top:7px; color:rgba(255,255,255,.40); font-size:10px; }
+.folder-edit-close { width:38px; height:38px; border:1px solid rgba(255,255,255,.09); border-radius:12px; background:rgba(255,255,255,.035); color:rgba(255,255,255,.7); font-size:23px; cursor:pointer; }
+.folder-edit-form { min-height:0; display:flex; flex-direction:column; }
+.folder-edit-grid { min-height:0; overflow:auto; display:grid; grid-template-columns:minmax(250px,.9fr) minmax(0,1.1fr); gap:18px; padding:18px 24px; }
+.folder-edit-art-column { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.folder-edit-preview { position:relative; aspect-ratio:1; overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:20px; background:#101310; box-shadow:0 16px 35px rgba(0,0,0,.30); }
+.folder-edit-preview::after { content:""; position:absolute; inset:0; box-shadow:inset 0 -70px 80px rgba(0,0,0,.22); pointer-events:none; }
+.folder-edit-preview-image { width:100%; height:100%; display:block; object-fit:cover; }
+.folder-edit-upload { display:flex; flex-direction:column; gap:4px; padding:12px; border:1px dashed rgba(75,218,109,.22); border-radius:14px; background:rgba(75,218,109,.035); cursor:pointer; }
+.folder-edit-upload input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.folder-edit-upload strong { color:rgba(255,255,255,.82); font-size:10px; }
+.folder-edit-upload small { color:rgba(255,255,255,.36); font-size:8px; }
+.folder-edit-crop-controls { padding:13px; border:1px solid rgba(255,255,255,.07); border-radius:15px; background:rgba(255,255,255,.025); }
+.folder-edit-crop-head { display:flex; justify-content:space-between; color:rgba(255,255,255,.54); font-size:9px; font-weight:800; margin-bottom:9px; }
+.folder-edit-crop-value { color:rgb(75,218,109); }
+.folder-edit-crop-controls label { display:grid; grid-template-columns:70px 1fr; align-items:center; gap:9px; color:rgba(255,255,255,.40); font-size:8px; margin-top:8px; }
+.folder-edit-crop-controls input[type="range"] { width:100%; accent-color:rgb(75,218,109); }
+.folder-edit-reset-crop { margin-top:10px; border:0; background:transparent; color:rgba(255,255,255,.38); font:inherit; font-size:8px; cursor:pointer; }
+.folder-edit-reset-crop:hover { color:#fff; }
+.folder-edit-fields { display:flex; flex-direction:column; gap:12px; }
+.folder-edit-fields label { display:flex; flex-direction:column; gap:7px; padding:13px; border:1px solid rgba(255,255,255,.07); border-radius:15px; background:rgba(255,255,255,.025); }
+.folder-edit-fields label > span { color:rgba(75,218,109,.72); font-size:8px; font-weight:800; letter-spacing:.12em; }
+.folder-edit-fields input, .folder-edit-fields textarea { width:100%; border:0; outline:0; resize:none; background:transparent; color:#fff; font:inherit; font-size:12px; }
+.folder-edit-fields input::placeholder, .folder-edit-fields textarea::placeholder { color:rgba(255,255,255,.20); }
+.folder-edit-fields label:focus-within { border-color:rgba(75,218,109,.30); background:rgba(75,218,109,.04); }
+.folder-edit-error { min-height:16px; color:rgba(255,145,145,.92); font-size:8px; }
+.folder-edit-footer { display:flex; justify-content:flex-end; gap:8px; padding:13px 24px 18px; border-top:1px solid rgba(255,255,255,.07); }
+.folder-edit-footer button { min-height:42px; padding:0 15px; border-radius:12px; font:inherit; font-size:10px; font-weight:800; cursor:pointer; }
+.folder-edit-cancel { border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.035); color:rgba(255,255,255,.64); }
+.folder-edit-save { border:1px solid rgba(75,218,109,.48); background:linear-gradient(135deg,rgb(75,218,109),rgb(103,235,132)); color:#07130b; box-shadow:0 8px 22px rgba(75,218,109,.12); }
+.folder-edit-footer button:active { transform:scale(.96); }
+
+@media (max-width:850px) {
+    .folder-card-menu { opacity:.9; transform:none; }
+    .folder-mini-player { min-width:0; flex-basis:100%; order:3; }
+    .folder-edit-modal-backdrop { align-items:flex-end; padding:8px; }
+    .folder-edit-modal { width:100%; max-height:calc(100dvh - 16px); border-radius:23px 23px 16px 16px; }
+    .folder-edit-grid { grid-template-columns:1fr; padding:13px 15px; gap:12px; }
+    .folder-edit-preview { max-height:300px; }
+    .folder-edit-footer { padding:10px 15px max(12px, env(safe-area-inset-bottom)); display:grid; grid-template-columns:1fr 1.3fr; }
+    .folder-edit-footer button { width:100%; }
+}
+@media (max-width:520px) {
+    .folder-mini-player { grid-template-columns:auto minmax(0,1fr); gap:8px; padding:6px 8px; }
+    .folder-mini-controls button { width:27px; height:27px; }
+    .folder-mini-controls .folder-mini-toggle { width:31px; height:31px; }
+    .folder-edit-header { padding:17px 15px 14px; }
+    .folder-edit-header p { display:none; }
+    .folder-edit-grid { padding:11px 12px; }
+    .folder-edit-preview { border-radius:17px; }
+    .folder-card-menu { width:32px; height:32px; top:8px; right:8px; }
+}
+@media (pointer:coarse) {
+    .folder-card-menu { opacity:.9; }
+    .folder-card-menu:hover { transform:none; }
+    .folder-mini-controls button:hover { transform:none; }
+}
+@media (prefers-reduced-motion:reduce) {
+    .folder-card-menu, .folder-card-menu-popover, .folder-mini-player, .folder-mini-controls button, .folder-edit-modal-backdrop, .folder-edit-modal { transition:none !important; animation:none !important; }
+}
+
+
+/* ==========================================================
+   V12 FOLDER UI — ORIGINAL CARD STYLING PRESERVED
+   ----------------------------------------------------------
+   No visual/geometry override is applied to .card/.folder-card.
+   Folder options live only inside the opened folder interface.
+   ========================================================== */
+
+/* Never show a legacy three-dot/options menu on a folder card. */
+.card.folder-card .folder-card-menu,
+.card.folder-card .folder-card-menu-popover,
+.custom-folder-card .folder-card-menu,
+.custom-folder-card .folder-card-menu-popover,
+#spootitify-folder-menu-portal {
+    display: none !important;
+}
+
+/* The open-folder toolbar must sit above the scrollable song list. */
+.folder-modal-toolbar {
+    position: relative !important;
+    z-index: 40 !important;
+    overflow: visible !important;
+    isolation: isolate;
+}
+
+.folder-modal-toolbar + .folder-song-list,
+.folder-song-list {
+    position: relative;
+    z-index: 1;
+}
+
+.folder-saved-actions-enhanced,
+.folder-toolbar-actions-enhanced {
+    position: relative !important;
+    z-index: 60 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 7px !important;
+    flex: 0 0 auto !important;
+    margin-left: auto !important;
+    overflow: visible !important;
+}
+
+.folder-header-menu-wrap {
+    position: relative !important;
+    z-index: 70 !important;
+    flex: 0 0 auto;
+    overflow: visible !important;
+}
+
+.folder-header-menu-button {
+    width: 35px;
+    height: 35px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,.11);
+    border-radius: 10px;
+    background: rgba(255,255,255,.045);
+    color: rgba(255,255,255,.72);
+    font: inherit;
+    cursor: pointer;
+    line-height: 1;
+    touch-action: manipulation;
+    transition: transform .20s ease, background .20s ease,
+                border-color .20s ease, color .20s ease,
+                box-shadow .20s ease;
+}
+
+.folder-header-menu-button > span {
+    display: block;
+    transform: translateY(-2px);
+    font-size: 19px;
+    letter-spacing: 1px;
+    line-height: 1;
+}
+
+.folder-header-menu-button:hover,
+.folder-header-menu-button[aria-expanded="true"] {
+    transform: translateY(-1px);
+    background: rgba(255,255,255,.075);
+    border-color: rgba(75,218,109,.32);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(0,0,0,.18);
+}
+
+.folder-header-menu {
+    position: absolute !important;
+    top: calc(100% + 7px);
+    right: 0;
+    z-index: 200 !important;
+    min-width: 154px;
+    padding: 6px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 13px;
+    background: rgba(18,21,19,.985);
+    color: #fff;
+    box-shadow: 0 18px 42px rgba(0,0,0,.54),
+                0 0 22px rgba(75,218,109,.045),
+                inset 0 1px 0 rgba(255,255,255,.055);
+    backdrop-filter: blur(18px) saturate(1.05);
+    -webkit-backdrop-filter: blur(18px) saturate(1.05);
+    transform-origin: top right;
+    animation: folderHeaderMenuV12 .16s cubic-bezier(.22,1,.36,1) both;
+}
+
+.folder-header-menu[hidden] {
+    display: none !important;
+}
+
+.folder-header-menu button {
+    width: 100%;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(255,255,255,.82);
+    font: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    text-align: left;
+    cursor: pointer;
+    transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+
+.folder-header-menu button:hover,
+.folder-header-menu button:focus-visible {
+    outline: none;
+    background: rgba(75,218,109,.08);
+    color: #fff;
+    transform: translateX(2px);
+}
+
+.folder-header-menu button[data-folder-header-action="delete"] {
+    color: rgba(255,150,150,.86);
+}
+
+.folder-header-menu button[data-folder-header-action="delete"]:hover,
+.folder-header-menu button[data-folder-header-action="delete"]:focus-visible {
+    background: rgba(255,75,75,.075);
+    color: #ffd6d6;
+}
+
+@keyframes folderHeaderMenuV12 {
+    from { opacity: 0; transform: translateY(-4px) scale(.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Delete/edit must never render as a footer action. */
+.folder-secondary-actions .folder-delete,
+.folder-modal-footer > .folder-delete {
+    display: none !important;
+}
+
+/* Clean removal glyph; keep it separate from the song-number column. */
+.folder-saved-song {
+    padding-right: 7px !important;
+}
+
+.folder-saved-song .folder-remove {
+    position: relative !important;
+    z-index: 10 !important;
+    flex: 0 0 34px !important;
+    width: 34px !important;
+    height: 34px !important;
+    display: grid !important;
+    place-items: center !important;
+    padding: 0 !important;
+    margin-left: 3px !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 20px !important;
+    font-weight: 400 !important;
+    line-height: 1 !important;
+    color: rgba(255,255,255,.62) !important;
+}
+
+.folder-saved-song .folder-remove::before,
+.folder-saved-song .folder-remove::after,
+.folder-saved-song .folder-remove > span {
+    display: none !important;
+    content: none !important;
+}
+
+.folder-saved-song .folder-remove:hover {
+    color: #fff !important;
+}
+
+/* Give the picker Save action and Back/Cancel clear left/right positions. */
+.folder-modal-footer.folder-picker-footer,
+.folder-modal-actions-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    width: 100%;
+}
+
+.folder-modal-footer.folder-picker-footer .folder-secondary-actions,
+.folder-modal-actions-row .folder-secondary-actions {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    justify-content: flex-start !important;
+}
+
+.folder-modal-footer.folder-picker-footer .folder-primary-actions,
+.folder-modal-actions-row .folder-primary-actions {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    justify-content: flex-end !important;
+    margin-left: auto;
+}
+
+@media (max-width: 850px) {
+    .folder-modal-toolbar {
+        z-index: 50 !important;
+    }
+
+    .folder-saved-actions-enhanced,
+    .folder-toolbar-actions-enhanced {
+        gap: 5px !important;
+    }
+
+    .folder-header-menu-button {
+        width: 36px;
+        height: 36px;
+    }
+
+    .folder-header-menu {
+        min-width: 164px;
+        max-width: calc(100vw - 30px);
+    }
+
+    .folder-saved-song .folder-remove {
+        flex-basis: 32px !important;
+        width: 32px !important;
+        height: 32px !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .folder-modal-footer.folder-picker-footer,
+    .folder-modal-actions-row {
+        flex-direction: row !important;
+    }
+
+    .folder-header-menu {
+        right: 0;
+        min-width: 150px;
+    }
+
+    .folder-header-menu-button {
+        width: 34px;
+        height: 34px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .folder-header-menu,
+    .folder-header-menu-button,
+    .folder-saved-song .folder-remove {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* ==========================================================
+   V13 — FOLDER GLASS SURFACE / HOVER CLIP FIX
+   ----------------------------------------------------------
+   Only visual polish is changed here. Card dimensions and
+   existing folder/player behavior remain untouched.
+   ========================================================== */
+
+/* Same original card geometry; only the surface is glassy. */
+.folder-card {
+    background:
+        linear-gradient(
+            145deg,
+            rgba(48, 54, 51, .58),
+            rgba(18, 22, 20, .68)
+        ) !important;
+    border-color: rgba(255, 255, 255, .10) !important;
+    box-shadow:
+        0 8px 22px rgba(0, 0, 0, .28),
+        inset 0 1px 0 rgba(255, 255, 255, .075),
+        inset 0 0 0 1px rgba(255, 255, 255, .018) !important;
+    backdrop-filter: blur(14px) saturate(1.05);
+    -webkit-backdrop-filter: blur(14px) saturate(1.05);
+}
+
+/* Remove the global white sweep / animated card sheen from folders. */
+.folder-card::before,
+.folder-card::after {
+    display: none !important;
+    opacity: 0 !important;
+    animation: none !important;
+}
+
+/* No upward transform: this keeps the top edge inside scroll containers. */
+.folder-card:hover {
+    transform: none !important;
+    background:
+        linear-gradient(
+            145deg,
+            rgba(54, 60, 57, .62),
+            rgba(20, 24, 22, .72)
+        ) !important;
+    border-color: rgba(255, 255, 255, .14) !important;
+    box-shadow:
+        0 12px 28px rgba(0, 0, 0, .34),
+        0 0 22px rgba(75, 218, 109, .055),
+        inset 0 1px 0 rgba(255, 255, 255, .09),
+        inset 0 0 0 1px rgba(255, 255, 255, .022) !important;
+}
+
+/* Keep the artwork itself stable when a folder is hovered. */
+.folder-card:hover > img {
+    transform: scale(1) !important;
+    filter: none !important;
+}
+
+/* The glass surface applies equally to old and newly-created folders. */
+.custom-folder-card {
+    background:
+        linear-gradient(
+            145deg,
+            rgba(48, 54, 51, .58),
+            rgba(18, 22, 20, .68)
+        ) !important;
+    border-color: rgba(255, 255, 255, .10) !important;
+}
+
+.custom-folder-card:hover {
+    background:
+        linear-gradient(
+            145deg,
+            rgba(54, 60, 57, .62),
+            rgba(20, 24, 22, .72)
+        ) !important;
+}
+
+@media (max-width: 850px) {
+    .folder-card,
+    .custom-folder-card {
+        background:
+            linear-gradient(
+                145deg,
+                rgba(48, 54, 51, .58),
+                rgba(18, 22, 20, .68)
+            ) !important;
+        border-color: rgba(255, 255, 255, .09) !important;
+        box-shadow:
+            0 8px 20px rgba(0, 0, 0, .28),
+            inset 0 1px 0 rgba(255, 255, 255, .07) !important;
+    }
+
+    .folder-card:hover,
+    .custom-folder-card:hover {
+        transform: none !important;
+        background:
+            linear-gradient(
+                145deg,
+                rgba(52, 58, 55, .61),
+                rgba(20, 24, 22, .71)
+            ) !important;
+        box-shadow:
+            0 10px 24px rgba(0, 0, 0, .31),
+            0 0 18px rgba(75, 218, 109, .045),
+            inset 0 1px 0 rgba(255, 255, 255, .085) !important;
+    }
+
+    .folder-card:hover > img,
+    .custom-folder-card:hover > img {
+        transform: scale(1) !important;
+        filter: none !important;
+    }
+}
+
+/* ========================================================================
+   FOLDER HOVER POLISH — v14
+   Keeps the original card geometry; adds a restrained float + in-card shine.
+   The shine is clipped by the folder card itself and never escapes its bounds.
+   ======================================================================== */
+
+.folder-card,
+.custom-folder-card {
+    overflow: hidden !important;
+    position: relative !important;
+    transform-origin: center center;
+    isolation: isolate;
+    will-change: transform;
+    transition:
+        transform .28s cubic-bezier(.22, 1, .36, 1),
+        box-shadow .28s ease,
+        border-color .28s ease,
+        background-color .28s ease;
+}
+
+/* Replace the generic card shine with a dedicated, fully-clipped folder shine. */
+.folder-card::after,
+.custom-folder-card::after {
+    content: "" !important;
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: inherit !important;
+    background:
+        linear-gradient(
+            112deg,
+            transparent 0%,
+            transparent 38%,
+            rgba(255,255,255,.09) 47%,
+            rgba(255,255,255,.16) 50%,
+            rgba(255,255,255,.07) 53%,
+            transparent 62%,
+            transparent 100%
+        ) !important;
+    transform: translate3d(-125%, 0, 0) skewX(-18deg) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    z-index: 1 !important;
+    filter: none !important;
+    box-shadow: none !important;
+    transition:
+        transform .68s cubic-bezier(.22, 1, .36, 1),
+        opacity .20s ease !important;
+}
+
+/* Float only — no scale, so the original card size remains unchanged. */
+@media (hover: hover) and (pointer: fine) {
+    .folder-card:hover,
+    .custom-folder-card:hover {
+        transform: translate3d(0, -5px, 0) !important;
+        box-shadow:
+            0 14px 28px rgba(0,0,0,.38),
+            0 0 20px rgba(75,218,109,.045),
+            inset 0 1px 0 rgba(255,255,255,.09),
+            inset 0 0 0 1px rgba(255,255,255,.018) !important;
+    }
+
+    .folder-card:hover::after,
+    .custom-folder-card:hover::after {
+        transform: translate3d(125%, 0, 0) skewX(-18deg) !important;
+        opacity: .95 !important;
+    }
+}
+
+/* Give transformed cards a little breathing room at the top of desktop/tablet
+   scroll containers so the first row can float without being clipped. */
+@media (min-width: 851px) {
+    .cardcontainer {
+        padding-top: 10px !important;
+        padding-bottom: 18px !important;
+    }
+}
+
+/* Touch devices do not have real hover; keep the interaction calm and stable. */
+@media (hover: none), (pointer: coarse) {
+    .folder-card:hover,
+    .custom-folder-card:hover {
+        transform: none !important;
+    }
+
+    .folder-card:hover::after,
+    .custom-folder-card:hover::after {
+        transform: translate3d(-125%, 0, 0) skewX(-18deg) !important;
+        opacity: 0 !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .folder-card,
+    .custom-folder-card {
+        transition: none !important;
+        will-change: auto !important;
+    }
+
+    .folder-card::after,
+    .custom-folder-card::after {
+        transition: none !important;
+    }
+}
