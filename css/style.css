@@ -140,183 +140,6 @@ body {
 }
 
 
-/* ========================================
-   HEADER BUTTONS
-======================================== */
-
-.buttons {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.buttons > * {
-    margin: 0;
-}
-
-
-/* ========================================
-   SIGN UP
-======================================== */
-
-.signupbtn {
-    position: relative;
-    overflow: hidden;
-
-    background: transparent;
-
-    color: rgb(165, 165, 165);
-
-    font-weight: 700;
-
-    border: none;
-    outline: none;
-
-    cursor: pointer;
-
-    font-size: 15px;
-
-    padding: 12px 18px;
-
-    border-radius: 25px;
-
-    transition:
-        color 0.3s ease,
-        transform 0.3s ease,
-        background-color 0.3s ease;
-}
-
-.signupbtn::after {
-    content: "";
-
-    position: absolute;
-
-    left: 50%;
-    bottom: 6px;
-
-    width: 0;
-    height: 2px;
-
-    border-radius: 10px;
-
-    background:
-        linear-gradient(
-            90deg,
-            rgb(75, 218, 109),
-            rgb(120, 255, 150)
-        );
-
-    transform: translateX(-50%);
-
-    transition: width 0.3s ease;
-}
-
-.signupbtn:hover {
-    color: white;
-
-    transform: translateY(-2px);
-
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.signupbtn:hover::after {
-    width: 45%;
-}
-
-
-/* ========================================
-   LOGIN
-======================================== */
-
-.loginbtn {
-    position: relative;
-    overflow: hidden;
-
-    border: none;
-    outline: none;
-
-    cursor: pointer;
-
-    width: 92px;
-
-    padding: 11px 18px;
-
-    border-radius: 28px;
-
-    color: #07130b;
-
-    background:
-        linear-gradient(
-            135deg,
-            rgb(75, 218, 109),
-            rgb(103, 235, 132)
-        );
-
-    font-size: 15px;
-
-    font-weight: 700;
-
-    box-shadow:
-        0 5px 15px rgba(75, 218, 109, 0.20),
-        inset 0 1px 1px rgba(255, 255, 255, 0.35);
-
-    transition:
-        transform 0.25s ease,
-        box-shadow 0.25s ease,
-        filter 0.25s ease;
-}
-
-.loginbtn::before {
-    content: "";
-
-    position: absolute;
-
-    top: 0;
-    left: -100%;
-
-    width: 60%;
-    height: 100%;
-
-    background:
-        linear-gradient(
-            100deg,
-            transparent,
-            rgba(255, 255, 255, 0.45),
-            transparent
-        );
-
-    transform: skewX(-20deg);
-
-    transition: left 0.55s ease;
-}
-
-.loginbtn:hover::before {
-    left: 140%;
-}
-
-.loginbtn:hover {
-    transform: translateY(-2px) scale(1.04);
-
-    filter: brightness(1.08);
-
-    box-shadow:
-        0 8px 25px rgba(75, 218, 109, 0.35),
-        0 0 18px rgba(75, 218, 109, 0.12),
-        inset 0 1px 1px rgba(255, 255, 255, 0.4);
-}
-
-.loginbtn:active {
-    transform: translateY(0) scale(0.97);
-
-    box-shadow:
-        0 3px 10px rgba(75, 218, 109, 0.2);
-}
-
-.signupbtn:focus-visible,
-.loginbtn:focus-visible {
-    outline: 2px solid rgb(75, 218, 109);
-    outline-offset: 3px;
-}
 
 .header::after {
     content: "";
@@ -342,10 +165,10 @@ body {
 
 
 /* ========================================
-   SPOTIFY PLAYLISTS
+   MUSIC PLAYLISTS
 ======================================== */
 
-.spotifyplaylists {
+.musicplaylists {
     padding: 16px;
 }
 
@@ -1872,7 +1695,7 @@ body {
         padding: 0 15px;
     }
 
-    .spotifyplaylists {
+    .musicplaylists {
         padding: 12px;
     }
 
@@ -2031,28 +1854,12 @@ body {
         display: none;
     }
 
-    .buttons {
-        width: 100%;
-        justify-content: flex-end;
-        gap: 5px;
-    }
 
-    .signupbtn {
-        font-size: 13px;
-        padding: 9px 12px;
-    }
-
-    .loginbtn {
-        width: 75px;
-        font-size: 13px;
-        padding: 9px 12px;
-    }
-
-    .spotifyplaylists {
+    .musicplaylists {
         padding: 10px;
     }
 
-    .spotifyplaylists h2 {
+    .musicplaylists h2 {
         font-size: 20px;
     }
 
@@ -2762,8 +2569,6 @@ body {
 }
 
 .nav-btn:focus-visible,
-.signupbtn:focus-visible,
-.loginbtn:focus-visible,
 .home-link:focus-visible,
 .play:focus-visible,
 .songlist ul li:focus-visible,
@@ -3483,7 +3288,7 @@ body {
         background: linear-gradient(135deg, rgba(34, 34, 34, 0.985), rgba(24, 24, 24, 0.985));
     }
 
-    .spotifyplaylists {
+    .musicplaylists {
         padding-bottom: 112px;
     }
 
@@ -3580,7 +3385,7 @@ body {
 }
 
 @media (max-width: 400px) {
-    .spotifyplaylists {
+    .musicplaylists {
         padding-bottom: 108px;
     }
 
@@ -3628,8 +3433,6 @@ body {
     }
 
     .nav-btn,
-    .signupbtn,
-    .loginbtn,
     .play,
     .songlist ul li,
     .search-box,
@@ -3698,24 +3501,8 @@ body {
         display: none !important;
     }
 
-    .buttons {
-        width: 100%;
-        justify-content: flex-end;
-        gap: 4px;
-    }
 
-    .signupbtn {
-        font-size: 12px;
-        padding: 9px 10px;
-    }
-
-    .loginbtn {
-        width: 72px;
-        font-size: 12px;
-        padding: 9px 10px;
-    }
-
-    .spotifyplaylists {
+    .musicplaylists {
         min-width: 0;
         padding: 13px 10px 126px;
     }
@@ -4012,7 +3799,7 @@ body {
         padding-left: 62px !important;
     }
 
-    .spotifyplaylists {
+    .musicplaylists {
         padding: 12px 9px 120px;
     }
 
@@ -4102,7 +3889,7 @@ body {
 }
 
 @media (max-width: 380px) {
-    .spotifyplaylists {
+    .musicplaylists {
         padding-left: 7px;
         padding-right: 7px;
     }
